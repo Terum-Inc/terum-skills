@@ -23,6 +23,8 @@ The strict schema requires `name`, `description`, `license`, and `metadata` with
 
 `eval` and `skill fix` run a lenient variant in which `license` and the three managed `metadata` fields are optional, because a folder that has never been published legitimately carries none of them. Every other clause still applies: no unknown top-level key, the folder name must equal `name`, and the grant must parse.
 
+Eval also accepts the fields Claude Code documents for a skill that run nothing on your machine: `model`, `effort`, `context`, `agent`, `background`, `disallowed-tools`, `argument-hint`, `arguments`, `disable-model-invocation`, `user-invocable` and `when_to_use`. An eval measures a skill as Claude Code runs it. A field like `model: haiku` changes that run, so moving it under `metadata` would change the result. `hooks` is still refused, because Claude Code registers a skill's hooks as commands that run on your machine. Any other unknown key is refused too, and the message names it. Validation, publishing and the fix command keep the stricter list, so a published skill stays portable to any Agent Skills host.
+
 `allowed-tools` must be a YAML list of strings, or one comma-separated string. Absent, empty, or a bare `allowed-tools:` line all normalize to no grant, which is fine. Anything else is malformed and fails, and the zod parse cannot catch it, which is why HYG1 checks it separately.
 
 Errors read like this:

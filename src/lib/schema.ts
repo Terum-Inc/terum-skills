@@ -363,6 +363,40 @@ export const localSkillFrontmatterSchema = z.object({
   'allowed-tools': z.unknown().optional(),
 }).strict();
 
+/** §5.3: the only top-level keys a skill may carry outside `eval`, in the order every refusal lists them. */
+export const AGENT_SKILLS_FIELDS = ['name', 'description', 'license', 'metadata', 'allowed-tools'] as const;
+
+/**
+ * Claude Code's documented skill frontmatter fields that execute nothing on the host (the Claude
+ * Code skills docs, frontmatter reference). `eval` alone accepts them at the top level. It measures a
+ * skill as Claude Code runs it, and a field such as `model: haiku` is part of what it measures:
+ * moving it under `metadata` to pass §5.3 would change the run. Publishing stays strict, so a
+ * published skill stays portable to every Agent Skills host.
+ *
+ * `hooks` is left out on purpose. Claude Code registers a skill's hooks as commands that run on the
+ * host for the rest of the session, so eval keeps refusing it and says why (`HOOKS_REFUSAL`).
+ */
+export const CLAUDE_CODE_SKILL_FIELDS = ['model', 'effort', 'context', 'agent', 'background', 'disallowed-tools', 'argument-hint', 'arguments', 'disable-model-invocation', 'user-invocable', 'when_to_use'] as const;
+
+/** Why eval refuses `hooks`, said once for the folder refusal and for HYG1. */
+export const HOOKS_REFUSAL = 'hooks register commands that run on this machine, so eval does not run a skill that declares them';
+
+/** The folder refusal for a top-level key eval does not accept: `hooks` says why, any other key lists what eval accepts. */
+export function evalFieldRefusal(key: string): string {
+  return key === 'hooks'
+    ? `unsupported top-level field hooks (${HOOKS_REFUSAL})`
+    : `unsupported top-level field ${key} (eval accepts ${[...AGENT_SKILLS_FIELDS, ...CLAUDE_CODE_SKILL_FIELDS].join(', ')})`;
+}
+
+/**
+ * eval only: `localSkillFrontmatterSchema` plus `CLAUDE_CODE_SKILL_FIELDS`, each optional. Their values
+ * are not validated here: Claude Code owns them, and eval runs the folder as Claude Code would. Still
+ * `.strict()`, so `hooks` and every other unknown key are refused.
+ */
+export const evalSkillFrontmatterSchema = localSkillFrontmatterSchema.extend(
+  Object.fromEntries(CLAUDE_CODE_SKILL_FIELDS.map((field) => [field, z.unknown().optional()])) as Record<(typeof CLAUDE_CODE_SKILL_FIELDS)[number], z.ZodOptional<z.ZodUnknown>>,
+).strict();
+
 export type AllowedTools = { ok: true; normalized: string; hash: string } | { ok: false; raw: unknown };
 
 /**

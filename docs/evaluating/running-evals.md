@@ -35,6 +35,23 @@ A folder that exists but the Library scan rejected is refused with the scan's ow
 the path, not with either sentence above: `<path> is not a usable skill folder: <detail>`, or
 `<path> could not be read as a skill folder: <reason>` when it could not be read at all.
 
+There is one exception, and it is eval's alone. The Library scan refuses any top-level key outside
+the Agent Skills standard, because a shared skill has to stay portable. Eval measures a skill as
+Claude Code runs it. So a folder refused only for Claude Code's own fields that run nothing on your
+machine goes through as it is: `model`, `effort`, `context`, `agent`, `background`,
+`disallowed-tools`, `argument-hint`, `arguments`, `disable-model-invocation`, `user-invocable` and
+`when_to_use`. A folder that sets `model: haiku` to save cost is measured with that field in place,
+the way Claude Code runs it. The rest of its checks still run: the grant must parse, and no symlink
+may sit inside the folder. `hooks` is still refused, because Claude Code registers a skill's hooks
+as commands that run on your machine. Any other key is refused as well. The refusal names the key:
+
+```
+<path> is not a usable skill folder: unsupported top-level field hooks (hooks register commands that run on this machine, so eval does not run a skill that declares them)
+```
+
+Publishing is unchanged. It still refuses the same folder until the field moves under `metadata`
+or is removed.
+
 The team is optional. It supplies exactly three things: the incumbent arm, the licence the hygiene
 check compares against, and the `skill_id` a shared receipt needs. A machine with no team configured
 evaluates anyway, with one opponent.
@@ -54,9 +71,10 @@ policy to one state for the whole run. With no team, this step does not happen.
 ### 3. Hygiene on the local bytes
 
 The folder as it sits on disk goes through the same deterministic hygiene checks `validate` runs,
-with one difference: the four Terum-managed frontmatter fields (`license`, `metadata.id`,
+with two differences. The four Terum-managed frontmatter fields (`license`, `metadata.id`,
 `metadata.author` and `metadata.terum-category`) are treated as optional, because eval targets a
-folder that may never have been published. Every other check is unchanged and fails closed.
+folder that may never have been published. And the Claude Code fields listed in step 1 are accepted
+at the top level, while `hooks` is still refused. Every other check is unchanged and fails closed.
 
 Warnings print and gate nothing. An error ends the run before any model call:
 

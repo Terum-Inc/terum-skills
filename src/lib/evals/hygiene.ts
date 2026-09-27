@@ -1,7 +1,7 @@
 /** Deterministic, in-memory skill hygiene checks (eval spec §9). */
 import YAML from 'yaml';
 import { CREDENTIAL_PATTERNS } from './receipt.js';
-import { allowedTools, describeRaw, FRONTMATTER, localSkillFrontmatterSchema, skillFrontmatterSchema } from '../schema.js';
+import { AGENT_SKILLS_FIELDS, allowedTools, CLAUDE_CODE_SKILL_FIELDS, describeRaw, evalSkillFrontmatterSchema, FRONTMATTER, HOOKS_REFUSAL, localSkillFrontmatterSchema, skillFrontmatterSchema } from '../schema.js';
 
 export type HygieneCode = 'HYG1' | 'HYG2' | 'HYG3' | 'HYG4' | 'HYG5' | 'HYG6' | 'HYG7' | 'HYG8';
 export interface HygieneFinding { code: HygieneCode; path: string; line?: number; message: string; }
@@ -23,6 +23,14 @@ export interface HygieneInput {
    * injects first (§5.1 step 4) and assesses the finished bytes.
    */
   managedFieldsAbsent?: boolean;
+  /**
+   * eval only, and it implies `managedFieldsAbsent`'s leniency: HYG1 parses with
+   * `evalSkillFrontmatterSchema`, which also accepts Claude Code's own skill fields at the top level
+   * (`CLAUDE_CODE_SKILL_FIELDS`). eval measures a skill as Claude Code runs it, and a field such as
+   * `model` is part of that. `hooks` and every other unknown key stay refused. `skill fix`,
+   * `validate` and publish never set it, so what they accept is unchanged.
+   */
+  claudeCodeFields?: boolean;
   /** Unknown or empty taxonomy means there is nothing to compare against. */
   categories?: readonly string[];
   /** Explicit `--allow-privileged` consent (or content whose repository copy already carries the
@@ -59,11 +67,13 @@ export function inspectHygiene(input: HygieneInput): HygieneAssessment {
   const errors: HygieneFinding[] = [];
   const warnings: HygieneFinding[] = [];
   const skill = input.files.get('SKILL.md');
-  const parsed = (input.managedFieldsAbsent ? localSkillFrontmatterSchema : skillFrontmatterSchema).safeParse(input.frontmatter);
+  const parsed = (input.claudeCodeFields ? evalSkillFrontmatterSchema : input.managedFieldsAbsent ? localSkillFrontmatterSchema : skillFrontmatterSchema).safeParse(input.frontmatter);
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
     const where = issue !== undefined && issue.path.length ? `field ${issue.path.join('.')}` : 'frontmatter';
-    errors.push({ code: 'HYG1', path: 'SKILL.md', message: `SKILL.md ${where} is invalid${issue === undefined ? '' : `: ${issue.message}`} (allowed top-level fields: name, description, license, metadata, allowed-tools).` });
+    const accepted = input.claudeCodeFields ? [...AGENT_SKILLS_FIELDS, ...CLAUDE_CODE_SKILL_FIELDS] : AGENT_SKILLS_FIELDS;
+    const hooks = input.claudeCodeFields && issue?.code === 'unrecognized_keys' && issue.keys.includes('hooks') ? ` The field hooks is refused: ${HOOKS_REFUSAL}.` : '';
+    errors.push({ code: 'HYG1', path: 'SKILL.md', message: `SKILL.md ${where} is invalid${issue === undefined ? '' : `: ${issue.message}`} (allowed top-level fields: ${accepted.join(', ')}).${hooks}` });
   } else if (parsed.data.name !== input.name) {
     errors.push({ code: 'HYG1', path: 'SKILL.md', line: lineOf(skill, /^name\s*:/m), message: `SKILL.md name ${parsed.data.name} does not equal folder ${input.name}.` });
   } else {
@@ -183,10 +193,10 @@ export class HygieneRefused extends Error {
   }
 }
 
-/** The single pure gate shared by every hygiene caller. */
-export function assessHygiene(name: string, input: { files: Map<string, Buffer>; executable: ReadonlySet<string> }, license: string | null, allowExecutable = false, managedFieldsAbsent = false, categories?: readonly string[], dependencyCount?: number): HygieneAssessment {
+/** The single pure gate shared by every hygiene caller. `options.claudeCodeFields` is eval's alone (`HygieneInput.claudeCodeFields`). */
+export function assessHygiene(name: string, input: { files: Map<string, Buffer>; executable: ReadonlySet<string> }, license: string | null, allowExecutable = false, managedFieldsAbsent = false, categories?: readonly string[], dependencyCount?: number, options: { claudeCodeFields?: boolean } = {}): HygieneAssessment {
   const skill = input.files.get('SKILL.md');
-  const assessment = inspectHygiene({ name, frontmatter: skill === undefined ? undefined : hygieneFrontmatter(skill), files: input.files, executable: input.executable, policy: { skill_license: license }, allowExecutable, managedFieldsAbsent, categories, dependencyCount });
+  const assessment = inspectHygiene({ name, frontmatter: skill === undefined ? undefined : hygieneFrontmatter(skill), files: input.files, executable: input.executable, policy: { skill_license: license }, allowExecutable, managedFieldsAbsent, categories, dependencyCount, claudeCodeFields: options.claudeCodeFields === true });
   if (assessment.errors.length) throw new HygieneRefused(assessment);
   return assessment;
 }

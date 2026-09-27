@@ -3,7 +3,7 @@ import { chmod, mkdir, readFile, realpath, symlink, writeFile } from 'node:fs/pr
 import YAML from 'yaml';
 import { join, relative, resolve, sep } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { candidatesOf, createLibraryScan, expandRefPath, librarySize, localSkillCounts, localSkills, localSkillRoots, nearestRepoRoot, refIsPath, resolveLibrarySkill, unusableSkillFolder } from '../local-skills.js';
+import { admitForEval, candidatesOf, createLibraryScan, expandRefPath, librarySize, localSkillCounts, localSkills, localSkillRoots, nearestRepoRoot, refIsPath, resolveLibrarySkill, unusableSkillFolder } from '../local-skills.js';
 import { emptyConfig } from '../schema.js';
 import { assertSkillSource } from '../skill-source.js';
 import { BUNDLED_SKILL_SOURCE, SYMLINKS_SUPPORTED, temporaryDirectory } from './fixtures.js';
@@ -506,6 +506,47 @@ describe('resolveLibrarySkill (D72)', () => {
     for (const ref of ['~', '~/x', '/x', './x', 'a/b', `a${sep}b`]) expect(refIsPath(ref)).toBe(true);
     expect(expandRefPath('~/.claude/skills/x', home)).toBe(join(home, '.claude', 'skills', 'x'));
     expect(expandRefPath('~', home)).toBe(resolve(home));
+  });
+});
+
+describe('admitForEval: Claude Code skill fields, for eval only', () => {
+  const resolved = async (source: string) => {
+    const home = await temporaryDirectory();
+    const path = await candidate(join(home, '.claude', 'skills'), 'explore', source);
+    return { path, match: (await resolveLibrarySkill(home, emptyConfig(), join(home, '.state'), 'explore'))! };
+  };
+
+  it('turns a folder the scan refused only for Claude Code fields into a candidate, and leaves the scan’s own verdict alone', async () => {
+    const { match } = await resolved('---\nname: explore\ndescription: Read-only exploration\nmodel: haiku\ncontext: fork\nagent: Explore\n---\n');
+    // The Library scan, `ls` and publish still see the rejection.
+    expect(match.inspection).toMatchObject({ kind: 'rejected', reason: 'unsupported-field', detail: 'unsupported top-level field model (only name, description, license, metadata, allowed-tools)' });
+    expect(await admitForEval(match)).toEqual({ ...match, inspection: { kind: 'candidate', description: 'Read-only exploration', privileged: false } });
+  });
+
+  it('names the key eval still refuses: hooks with its reason, any other key with the list eval accepts', async () => {
+    const hooks = await resolved('---\nname: explore\ndescription: x\nmodel: haiku\nhooks:\n  Stop: []\n---\n');
+    expect(unusableSkillFolder(await admitForEval(hooks.match))).toBe(`${hooks.path} is not a usable skill folder: unsupported top-level field hooks (hooks register commands that run on this machine, so eval does not run a skill that declares them)`);
+    const unknown = await resolved('---\nname: explore\ndescription: x\nfoo: x\n---\n');
+    expect(unusableSkillFolder(await admitForEval(unknown.match))).toBe(`${unknown.path} is not a usable skill folder: unsupported top-level field foo (eval accepts name, description, license, metadata, allowed-tools, model, effort, context, agent, background, disallowed-tools, argument-hint, arguments, disable-model-invocation, user-invocable, when_to_use)`);
+  });
+
+  it('runs the grant check the scan stopped before', async () => {
+    const { match } = await resolved('---\nname: explore\ndescription: x\nmodel: haiku\nallowed-tools:\n  bash: true\n---\n');
+    expect(await admitForEval(match)).toMatchObject({ inspection: { kind: 'rejected', reason: 'malformed-allowed-tools', detail: 'allowed-tools is malformed (SKILL.md line 5)' } });
+  });
+
+  it.skipIf(!SYMLINKS_SUPPORTED)('runs the nested-symlink check the scan stopped before', async () => {
+    const { path, match } = await resolved('---\nname: explore\ndescription: x\nmodel: haiku\n---\n');
+    await symlink(await temporaryDirectory(), join(path, 'outside'), 'dir');
+    expect(await admitForEval(match)).toMatchObject({ inspection: { kind: 'rejected', reason: 'nested-symlink', detail: `contains symlink ${join(path, 'outside')}` } });
+  });
+
+  it('returns every other verdict untouched', async () => {
+    const { match } = await resolved('---\nname: explore\n---\n');
+    expect(match.inspection).toMatchObject({ kind: 'rejected', reason: 'description-missing' });
+    expect(await admitForEval(match)).toBe(match);
+    const stock = await resolved('---\nname: explore\ndescription: x\n---\n');
+    expect(await admitForEval(stock.match)).toBe(stock.match);
   });
 });
 

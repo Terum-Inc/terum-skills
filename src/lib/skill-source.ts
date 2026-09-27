@@ -2,7 +2,7 @@ import { realpathSync } from 'node:fs';
 import { lstat, readFile, readdir, stat } from 'node:fs/promises';
 import { join, resolve, sep } from 'node:path';
 import YAML from 'yaml';
-import { allowedTools, describeRaw, FRONTMATTER, isSkillName, skillIdSchema } from './schema.js';
+import { AGENT_SKILLS_FIELDS, allowedTools, CLAUDE_CODE_SKILL_FIELDS, describeRaw, evalFieldRefusal, FRONTMATTER, isSkillName, skillIdSchema } from './schema.js';
 import { ignoredByDigest } from './skills.js';
 import { isManagedFrontmatter } from './wrapper.js';
 
@@ -23,9 +23,13 @@ export function assertNotInsideStateRoot(source: string, stateRoot: string): voi
   }
 }
 
-/** A tracked source may have been relocated; only initial imports enforce the folder's name. */
-export function inspectSkillSource(raw: string, folderName?: string): SourceInspection {
-  const result = inspect(raw, folderName);
+/**
+ * A tracked source may have been relocated; only initial imports enforce the folder's name.
+ * `claudeCodeFields` is eval's reading alone: it also accepts `CLAUDE_CODE_SKILL_FIELDS` at the top
+ * level. The Library scan, connect and `skill fix` never pass it.
+ */
+export function inspectSkillSource(raw: string, folderName?: string, options: { claudeCodeFields?: boolean } = {}): SourceInspection {
+  const result = inspect(raw, folderName, options.claudeCodeFields === true);
   if (result.ok) return result;
   return { ok: false, reason: result.reason, detail: result.detail, ...(result.description === undefined ? {} : { description: result.description }), ...(result.category === undefined ? {} : { category: result.category }) };
 }
@@ -37,7 +41,7 @@ export function assertSkillSource(raw: string, folderName: string): string {
   return result.description;
 }
 
-function inspect(raw: string, folderName?: string): { ok: true; description: string; category?: string; id: string | null } | { ok: false; reason: SourceProblem; detail: string; description?: string; category?: string; shareMessage: string } {
+function inspect(raw: string, folderName?: string, claudeCodeFields = false): { ok: true; description: string; category?: string; id: string | null } | { ok: false; reason: SourceProblem; detail: string; description?: string; category?: string; shareMessage: string } {
   // Refusing to connect a folder is not a failure to read it. Every rejection raised after the
   // frontmatter parses carries the description and category it found, so the Library can describe a folder it
   // will never offer; a rejection raised before the parse has nothing to carry and stays bare.
@@ -61,8 +65,9 @@ function inspect(raw: string, folderName?: string): { ok: true; description: str
   const legacyNameMessage = `SKILL.md name must equal folder ${folderName} and description is required.`;
   if (folderName !== undefined && parsed?.name !== folderName) return reject('name-mismatch', `SKILL.md name ${String(parsed?.name)} does not equal folder ${folderName}`, legacyNameMessage);
   if (!parsed || typeof parsed.description !== 'string') return reject('description-missing', 'description is missing', legacyNameMessage);
+  const accepted: readonly string[] = claudeCodeFields ? [...AGENT_SKILLS_FIELDS, ...CLAUDE_CODE_SKILL_FIELDS] : AGENT_SKILLS_FIELDS;
   for (const key of Object.keys(parsed)) {
-    if (!['name', 'description', 'license', 'metadata', 'allowed-tools'].includes(key)) return reject('unsupported-field', `unsupported top-level field ${key} (only name, description, license, metadata, allowed-tools)`);
+    if (!accepted.includes(key)) return reject('unsupported-field', claudeCodeFields ? evalFieldRefusal(key) : `unsupported top-level field ${key} (only ${AGENT_SKILLS_FIELDS.join(', ')})`);
   }
   // Discovery needs a candidate/omission reason. Connect itself deliberately does not call this
   // validator: its assembled post-injection candidate goes through the single HYG1 path instead.

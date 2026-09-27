@@ -10,7 +10,7 @@ import { bareTeam, cloneWithIdentity, git, holdCloneLock, NonInteractivePrompter
 import { receiptSchema } from '../../lib/evals/receipt.js';
 import { skillContentDigest } from '../../lib/skills.js';
 import { sourceFiles } from '../../lib/skill-source.js';
-import { queueItemsFor, run, saveGeneratedAssets } from '../eval.js';
+import { queueItemsFor, run, runMany, saveGeneratedAssets, type EvalArgs } from '../eval.js';
 import { run as publishRun } from '../publish.js';
 
 // Clone the ESM namespace so one fs call can be observed or made to fail, then restored (the
@@ -600,9 +600,14 @@ describe('eval-in-app completion and eligibility', () => {
   });
 });
 
+/** What eval accepts at the top level, and its refusal of `hooks`, spelled out so the messages are pinned. */
+const EVAL_FIELDS = 'name, description, license, metadata, allowed-tools, model, effort, context, agent, background, disallowed-tools, argument-hint, arguments, disable-model-invocation, user-invocable, when_to_use';
+const HOOKS_DETAIL = 'unsupported top-level field hooks (hooks register commands that run on this machine, so eval does not run a skill that declares them)';
+
 describe('D72 — the B3 full review highs on eval', () => {
-  const rejected = `---\nname: sample\ndescription: checks deployments\nargument-hint: x\n---\n`;
-  const detail = 'unsupported top-level field argument-hint (only name, description, license, metadata, allowed-tools)';
+  // An unknown key, not one of Claude Code's own fields: eval accepts those (see the describe below).
+  const rejected = `---\nname: sample\ndescription: checks deployments\nfoo: x\n---\n`;
+  const detail = `unsupported top-level field foo (eval accepts ${EVAL_FIELDS})`;
 
   it('a folder that exists but the scan rejected fails with its path and the scan’s detail, never the §6.3 miss', async () => {
     const { store, home, folder } = await evalFixture({ source: rejected });
@@ -646,6 +651,81 @@ describe('D72 — the B3 full review highs on eval', () => {
     await writeFile(join(folder, 'evals', 'triggers.yaml'), TRIGGERS);
     expect(await saveGeneratedAssets(folder, { triggers: TRIGGERS, cases: { names: ['a'], files: { 'a.yaml': CASE } } })).toMatchObject({ ok: false, error: expect.stringContaining('already exists') });
     expect(await readdir(join(folder, 'evals'))).toEqual(['triggers.yaml']);
+  });
+});
+
+describe('Claude Code skill fields: eval measures the folder as Claude Code runs it', () => {
+  // The shape of a real public skill (caveman-explore sets `model: haiku`): the field is how it saves
+  // cost, so moving it under `metadata` to pass the publish rule would change what the run measures.
+  const withFields = (fields: string) => skill().replace('license:', `${fields}license:`);
+  const counted = () => {
+    const calls = { preflight: 0, agent: 0 };
+    const agent: AgentApi = { runAgent: async () => { calls.agent++; return transcript([]); }, askJson: async () => { calls.agent++; return { selected: [] }; } };
+    return { calls, agent, preflight: async () => { calls.preflight++; return success({ ccVersion: 'stub' }); } };
+  };
+
+  it('runs a skill whose frontmatter sets model and argument-hint, and stages those exact bytes in the arms', async () => {
+    const { store, home, folder } = await evalFixture({ source: withFields('model: haiku\nargument-hint: x\n'), assets: { 'evals/cases/happy.yaml': CASE } });
+    const staged: string[] = [];
+    const agent: AgentApi = {
+      runAgent: async (_task, cwd) => {
+        const copy = join(cwd, '.claude', 'skills', 'sample', 'SKILL.md');
+        if (existsSync(copy)) staged.push(await readFile(copy, 'utf8'));
+        return transcript(existsSync(copy) ? ['sample'] : []);
+      },
+      askJson: async () => ({ selected: ['sample'] }),
+    };
+    // The id comes from the folder's own metadata, exactly as for a folder the scan accepts.
+    expect(await run(args(store, home, { agent, k: 1, noGen: true }), new ScriptedPrompter())).toMatchObject({ ok: true, value: { executionStatus: 'complete', id: ID } });
+    expect(staged.length).toBeGreaterThan(0);
+    for (const text of staged) expect(text).toContain('model: haiku\nargument-hint: x\n');
+    // Eval only: the Library scan is unchanged, so publish still refuses the same folder.
+    expect(await publishRun({ ref: 'sample', home, config: store }, new ScriptedPrompter())).toMatchObject({ ok: false, error: `${folder} is not a usable skill folder: unsupported top-level field model (only name, description, license, metadata, allowed-tools)` });
+  });
+
+  it.each([
+    ['hooks', 'hooks:\n  Stop: []\n', HOOKS_DETAIL],
+    ['an unknown key', 'foo: x\n', `unsupported top-level field foo (eval accepts ${EVAL_FIELDS})`],
+  ])('still refuses %s beside a Claude Code field, naming the key, before preflight or any agent call', async (_label, extra, detail) => {
+    // `model` comes first, so the scan's own rejection names `model`; the refusal has to name the key that is really wrong.
+    const { store, home, folder } = await evalFixture({ source: withFields(`model: haiku\n${extra}`) });
+    const { calls, agent, preflight } = counted();
+    expect(await run(args(store, home, { agent, preflight }), new ScriptedPrompter())).toEqual({ ok: false, error: `${folder} is not a usable skill folder: ${detail}` });
+    expect(calls).toEqual({ preflight: 0, agent: 0 });
+  });
+
+  it('checks what the scan never reached: a Claude Code field beside a malformed grant is refused for the grant', async () => {
+    const { store, home, folder } = await evalFixture({ source: withFields('model: haiku\nallowed-tools:\n  bash: true\n') });
+    expect(await run(args(store, home, { agent: counted().agent }), new ScriptedPrompter())).toEqual({ ok: false, error: `${folder} is not a usable skill folder: allowed-tools is malformed (SKILL.md line 5)` });
+  });
+
+  it('lets a rival that sets Claude Code fields into a head-to-head, and refuses one that declares hooks', async () => {
+    const { store, home } = await evalFixture();
+    const rival = join(home, '.claude', 'skills', 'rival-checker');
+    await mkdir(rival, { recursive: true });
+    await writeFile(join(rival, 'SKILL.md'), '---\nname: rival-checker\ndescription: also checks deployments\nmodel: haiku\neffort: low\n---\nprefer a dry run first');
+    const briefAgent: AgentApi = { runAgent: async () => transcript([]), askJson: async () => ({ brief: 'Take a change that is ready and get it live without surprising anyone.' }) };
+    // --derive-brief stops before any arm, after both folders have passed resolution and hygiene.
+    expect(await run(args(store, home, { vs: 'rival-checker', deriveBrief: true, agent: briefAgent }), new NonInteractivePrompter())).toMatchObject({ ok: true, value: { derivedBriefOnly: true } });
+    await writeFile(join(rival, 'SKILL.md'), '---\nname: rival-checker\ndescription: also checks deployments\nhooks:\n  Stop: []\n---\n');
+    expect(await run(args(store, home, { vs: 'rival-checker', deriveBrief: true, agent: briefAgent }), new NonInteractivePrompter())).toEqual({ ok: false, error: `${rival} is not a usable skill folder: ${HOOKS_DETAIL}` });
+  });
+
+  it('the batch and the queue let the same folder through, and refuse hooks in the same words', async () => {
+    const { store, home, folder } = await evalFixture({ source: withFields('model: haiku\n') });
+    const evaluate = vi.fn(async (evalArgs: EvalArgs) => success({ team: null, id: null, name: evalArgs.ref!, runDir: '', ccVersion: 'stub', executionStatus: 'complete' as const }));
+    const queue = async (lines: string[]) => queueItemsFor({ home, config: await store.read(), stateRoot: store.root, names: ['sample'], requestedAt: '2026-09-27T00:00:00Z', window: 'later' }, (line) => lines.push(line));
+    const lines: string[] = [];
+    expect(await queue(lines)).toMatchObject([{ skill: 'sample', path: folder }]);
+    expect(lines).toEqual([]);
+    expect(await runMany({ refs: ['sample'], home, config: store, preflight: stub, evaluate }, new ScriptedPrompter())).toMatchObject({ ok: true, value: { skills: ['sample'], ok: 1 } });
+
+    await writeFile(join(folder, 'SKILL.md'), withFields('model: haiku\nhooks:\n  Stop: []\n'));
+    const refusal = `${folder} is not a usable skill folder: ${HOOKS_DETAIL}`;
+    expect(await queue(lines)).toEqual([]);
+    expect(lines).toEqual([`sample: ${refusal}; it was not queued.`]);
+    expect(await runMany({ refs: ['sample'], home, config: store, preflight: stub, evaluate }, new ScriptedPrompter())).toEqual({ ok: false, error: refusal });
+    expect(evaluate).toHaveBeenCalledTimes(1);
   });
 });
 

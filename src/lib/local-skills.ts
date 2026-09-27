@@ -354,3 +354,29 @@ export function unusableSkillFolder(match: LibrarySkillMatch): string | undefine
   if (match.inspection.kind === 'failed') return `${match.path} could not be read as a skill folder: ${match.inspection.reason}`;
   return undefined;
 }
+
+/**
+ * eval only: the scan's verdict on a resolved folder, with Claude Code's own skill fields accepted
+ * (`CLAUDE_CODE_SKILL_FIELDS`). The scan stays strict because it answers "can this be shared" (§5.3),
+ * and `ls`, the desktop and publish keep reading it as it is. eval measures a skill as Claude Code
+ * runs it, so a folder the scan rejected ONLY for an unsupported top-level field is read again from
+ * its SKILL.md with those fields accepted, and the checks the scan stopped before (the grant, nested
+ * symlinks) run here. The result is what the scan would have said had it accepted them: a candidate,
+ * or the next thing wrong, such as `hooks` or an unknown key, named by `evalFieldRefusal`. Every
+ * other verdict comes back untouched, so `unusableSkillFolder` words every refusal as before.
+ */
+export async function admitForEval(match: LibrarySkillMatch): Promise<LibrarySkillMatch> {
+  if (match.inspection.kind !== 'rejected' || match.inspection.reason !== 'unsupported-field') return match;
+  let inspection: Inspection;
+  try {
+    // No folder name: the scan's rejection came after its name checks, so they already passed, and
+    // HYG1 holds `name` to the folder again before anything is paid for.
+    const source = inspectSkillSource(await readFile(join(match.path, 'SKILL.md'), 'utf8'), undefined, { claudeCodeFields: true });
+    if (!source.ok) inspection = { kind: 'rejected', reason: source.reason, detail: source.detail, ...(source.description === undefined ? {} : { description: source.description }) };
+    else {
+      const scan = await scanSkillFolder(match.path);
+      inspection = scan.symlink ? { kind: 'rejected', reason: 'nested-symlink', detail: `contains symlink ${scan.symlink}` } : { kind: 'candidate', description: source.description, privileged: scan.privileged };
+    }
+  } catch (error) { inspection = { kind: 'failed', reason: error instanceof Error ? error.message : String(error) }; }
+  return { ...match, inspection };
+}
