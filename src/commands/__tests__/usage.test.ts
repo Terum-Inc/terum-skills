@@ -35,6 +35,19 @@ async function machine(lines: string[], placements: Record<string, ReturnType<ty
 
 const PLACED = { '/home/me/.claude/skills/codex-spec': entry(at('2026-07-01T00:00:00.000Z')) };
 
+describe('usage — the JSON object carries the per-day buckets', () => {
+  it('emits daily alongside rows, summing to the same counts', async () => {
+    const m = await machine([typed('codex-spec', '2026-09-01T12:00:00.000Z'), typed('codex-spec', '2026-09-01T13:00:00.000Z'), firing('codex-spec', '2026-09-03T12:00:00.000Z')], PLACED);
+    const result = await run({ config: m.store, projectsRoot: m.projectsRoot, now: () => NOW }, io);
+    expect(result.ok).toBe(true);
+    expect(result.value!.daily).toEqual([
+      { day: '2026-09-01', skill: 'codex-spec', d1: 0, d2: 2 },
+      { day: '2026-09-03', skill: 'codex-spec', d1: 1, d2: 0 },
+    ]);
+    expect(result.value!.rows[0]).toMatchObject({ d1: 1, d2: 2, placedAt: '2026-07-01T00:00:00.000Z' });
+  });
+});
+
 describe('usage — the row set is the placements ledger', () => {
   it('reports a placed skill people name but the model never chooses', async () => {
     const m = await machine([typed('codex-spec', '2026-09-01T00:00:00.000Z'), typed('codex-spec', '2026-09-02T00:00:00.000Z')], PLACED);
@@ -121,11 +134,11 @@ describe('placedSkills', () => {
 describe('renderReport — §7 output', () => {
   const report = (rows: UsageResult['rows'], extra: Partial<UsageResult> = {}): UsageResult => ({
     since: '2026-08-16T00:00:00.000Z', until: '2026-09-15T00:00:00.000Z',
-    rows, unused: 0, unrecognised: [], archived: 0, problems: [], usedArchive: false,
+    rows, unused: 0, unrecognised: [], daily: [], archived: 0, problems: [], usedArchive: false,
     caveats: ['Counts are invocations, not outcome-changing uses; reopenings are not deduped.'], ...extra,
   });
   const row = (skill: string, d1: number, d2: number, availability: 'full' | 'partial' | 'unknown' = 'full'): UsageResult['rows'][number] =>
-    ({ skill, label: 'team', d1, d2, autonomy: d1 + d2 === 0 ? null : d1 / (d1 + d2), availability });
+    ({ skill, label: 'team', d1, d2, autonomy: d1 + d2 === 0 ? null : d1 / (d1 + d2), availability, placedAt: '2026-07-01T00:00:00.000Z' });
 
   it('marks the case the verb exists for — used, never chosen', () => {
     expect(renderReport(report([row('codex-spec', 0, 4)]))[0]).toContain('never chosen from its description');
@@ -199,7 +212,7 @@ describe('usage — a skill Terum did not place still has observable firings', (
   it('renders those counts inline for a single skill, with no --all hint', () => {
     const rendered = renderReport({
       since: 'a', until: 'b', rows: [], unused: 0, unrecognised: [{ skill: 'decision-walk', d1: 1, d2: 3 }],
-      archived: 0, problems: [], usedArchive: false, caveats: ['c'],
+      archived: 0, problems: [], usedArchive: false, daily: [], caveats: ['c'],
     }, { single: true }).join('\n');
     expect(rendered).toContain('decision-walk');
     expect(rendered).toContain('1 autonomous');

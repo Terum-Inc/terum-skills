@@ -1,0 +1,50 @@
+/* The Library's Activation popup (?dialog=activation). The popup itself is the shared dialog frame;
+   this sheet lays out its header, the scrolling body, the skills table and the findings. */
+.activation-dialog-head{display:flex;align-items:center;gap:12px;padding:14px 16px 14px 20px;border-bottom:1px solid var(--tk-border1);flex-shrink:0}
+.activation-dialog-head .dialog-title{flex-shrink:0}
+.activation-dialog-head .board-small{line-height:normal}
+.activation-dialog-tools{display:flex;align-items:center;gap:8px;margin-left:auto}
+.activation-dialog-body{display:flex;flex-direction:column;gap:28px;min-height:0;overflow:auto;padding:18px 20px 22px}
+.activation-dialog-loading{display:flex;flex-direction:column;gap:16px}
+.activation-section{display:flex;flex-direction:column;gap:10px;min-width:0;flex-shrink:0}
+.activation-caveats{display:flex;flex-direction:column;gap:2px;flex-shrink:0}
+.activation-caveats .board-small{line-height:16px}
+
+.activation-table-wrap{overflow-x:auto;min-width:0}
+.activation-table{display:flex;flex-direction:column;min-width:860px}
+.activation-row{display:grid;grid-template-columns:minmax(150px,1.3fr) minmax(150px,1.4fr) 60px 70px 64px 64px 92px 104px;gap:14px;align-items:center;width:100%;min-height:38px;padding:0 10px;border:0;border-top:1px solid var(--tk-border1);background:transparent;color:var(--tk-text1);font:inherit;font-size:13px;text-align:left;box-sizing:border-box}
+button.activation-row{cursor:pointer}
+button.activation-row:hover{background:var(--tk-bg3)}
+button.activation-row:focus-visible{outline:2px solid var(--tk-accent);outline-offset:-2px}
+.activation-row .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.activation-head{min-height:30px;border-top:0;font-size:12px;font-weight:500;color:var(--tk-text3)}
+.activation-group{display:flex;align-items:center;min-height:32px;padding:0 10px;border-top:1px solid var(--tk-border1);background:var(--tk-bg2);font-size:12px;font-weight:500;color:var(--tk-text3)}
+.activation-skill{display:flex;align-items:baseline;gap:8px;min-width:0}
+.activation-skill>b{font-weight:510;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.activation-skill>span{font-size:12px;color:var(--tk-text4);white-space:nowrap}
+.activation-row[data-cold] .activation-skill>b{color:var(--tk-text3)}
+.activation-zero{color:var(--tk-text4)}
+.activation-muted{color:var(--tk-text3)}
+.activation-strip{display:block;width:100%;height:20px}
+.strip-model{fill:var(--tk-accent)}
+.strip-name{fill:color-mix(in srgb,var(--tk-accent) 45%,var(--tk-bg4))}
+.strip-empty{fill:var(--tk-bg4)}
+.activation-key{display:inline-flex;align-items:center;gap:5px;margin-left:10px;font-weight:400;color:var(--tk-text4)}
+.activation-key>i{width:8px;height:8px;border-radius:2px;display:inline-block}
+.activation-key>i.model{background:var(--tk-accent)}
+.activation-key>i.name{background:color-mix(in srgb,var(--tk-accent) 45%,var(--tk-bg4));margin-left:6px}
+
+.activation-findings{display:flex;flex-direction:column;border-top:1px solid var(--tk-border1)}
+.activation-finding{display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:12px;align-items:start;padding:12px 0;border-bottom:1px solid var(--tk-border1)}
+.activation-finding-mark{width:22px;height:22px;border-radius:6px;display:grid;place-items:center;background:color-mix(in srgb,var(--tone) 15%,transparent)}
+.activation-finding-mark::after{content:"";width:7px;height:7px;border-radius:50%;background:var(--tone)}
+.activation-finding[data-tone="bad"]{--tone:var(--tk-bad)}
+.activation-finding[data-tone="warn"]{--tone:var(--tk-warn)}
+.activation-finding[data-tone="quiet"]{--tone:var(--tk-text3)}
+.activation-finding[data-tone="good"]{--tone:var(--tk-good)}
+.activation-finding-title{font-size:13px;font-weight:510;line-height:20px;color:var(--tk-text1);text-wrap:balance}
+.activation-finding-body{font-size:12px;line-height:18px;color:var(--tk-text3);max-width:640px;text-wrap:pretty}
+.activation-finding-skills{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px;max-width:320px}
+.activation-chip{height:22px;padding:0 8px;border-radius:5px;border:1px solid var(--tk-border2);background:var(--tk-bg2);color:var(--tk-text2);font:inherit;font-size:12px;font-weight:500;cursor:pointer;white-space:nowrap}
+.activation-chip:hover{color:var(--tk-text1);border-color:var(--tk-text4)}
+.activation-chip:focus-visible{outline:2px solid var(--tk-accent);outline-offset:1px}

@@ -6,7 +6,8 @@ import { FEATURE_KEYS } from '../types';
 import type { Settings, SyncResult, ChangeSource, Features, Identity, Project, Root, LibraryScope, SkillDetail, TeamResult, ReconcileResult } from '../types';
 import { decodeText } from '../../lib/fixture-text';
 import { overviewCopy } from '../../lib/overview-copy';
-import { unpublishedOverview } from '../../lib/overview-counts';
+import { unpublishedLine } from '../../lib/overview-counts';
+import { mockUsage } from './usage';
 import { abbreviateHome } from '../paths';
 import type { Backend } from '../Backend';
 import type { EvalManyResult, FileDropEvent, InviteResult, Result, Roster, Run, SearchHit, SetupResult, SkillCard, Subscription } from '../types';
@@ -188,9 +189,10 @@ export function createMockBackend(opts:{latencyMs?:number}={}):Backend & {readon
     const card=cardFor(original,change.path,change.name);if(change.name!==change.original)Object.assign(card,{edited:true,summary:null,localEval:null,localEvalStale:card.localEval!==null});skills.push(card);
    }
    const overview=scenario==='empty'?zeroOverview:(Object.hasOwn(design.OVERVIEW_BY_SCOPE,canonical)?(design.OVERVIEW_BY_SCOPE as Record<string,typeof design.LIBRARY_OVERVIEW>)[canonical]!:zeroOverview);
-   // The fixture's overview predates the Unpublished tile, so its two strings and its zero caption
-   // are derived from the cards this scope actually draws rather than read from design.json.
-   return ok({roots,scanned:null,root,skills,overview:{...overview,skills:String(skills.length),installs:'—',...unpublishedOverview(skills),zero:{...overview.zero,unpublished:overviewCopy.unpublished}},title:`${skills.length} skill${skills.length===1?'':'s'}`});
+   // The fixture's overview predates the Activation tile and the Skills tile's publish-state caption,
+   // so the caption is derived from the cards this scope draws and the zero caption is app copy; the
+   // tile itself reads `usage` (Analytics.tsx), never this overview.
+   return ok({roots,scanned:null,root,skills,overview:{...overview,skills:String(skills.length),installs:'—',unpublished_line:unpublishedLine(skills),zero:{...overview.zero,activation:overviewCopy.activation}},title:`${skills.length} skill${skills.length===1?'':'s'}`});
   }),
   localSkill:({path})=>read('skill',()=>{const change=[...fileChanges.values()].find(change=>change.path===path),name=path.split(/[\\/]/).filter(Boolean).at(-1)??'';
    // A card that landed here (a move onto the evicted resident's path) wins; only a path nothing occupies any more is gone.
@@ -227,10 +229,6 @@ export function createMockBackend(opts:{latencyMs?:number}={}):Backend & {readon
     result.value.skillMd={frontmatter:frontmatter[0].replace(/\r?\n$/,''),body:[],markdown:RAW_MD.slice(frontmatter[0].length)};
    }
    return result.ok?ok(scopedDetail(removalState(withInstall({...result.value,...(scenario==='not-installed'?{installed:'absent' as const,placed:false,onDiskOnly:false,root:'Marketplace' as const,flags:[]}:{}),...(scenario==='on-disk-only'&&ref==='deploy-check'?{installed:'placed' as const,placed:false,onDiskOnly:true,path:'~/.claude/skills/deploy-check',pathLabel:'~/.claude/skills/deploy-check',paths:[['~/.claude/skills/deploy-check','global']] as [string,string][]}:{}),enabled:scenario==='disabled'?false:backend.prefs.get('enabled:'+ref,result.value.enabled),favorite:backend.prefs.get('favorite:'+ref,result.value.favorite)})),at)):result;},ref),
-  /** Fixture firings. `deploy-check` is the case the feature exists for — reached for by hand, never
-   *  chosen by the model. `pr-review` is placed and silent. `incident-triage` fired but Terum never
-   *  placed it, the case that wrongly read "not installed" before. A skill in neither map has
-   *  nothing recorded, which is not a claim about whether it is installed. */
   /** Screening is an ACTION that spends model calls, so the mock returns a `Run` like `eval` does,
    *  not a resolved read. `deploy-check` is the interesting fixture: 0 autonomous / 4 explicit in
    *  `usage`, so it is the skill a reader would actually screen. `pr-review` is the 0/0 row -- the
@@ -247,16 +245,10 @@ export function createMockBackend(opts:{latencyMs?:number}={}):Backend & {readon
     since:'2026-09-08T00:00:00.000Z',until:'2026-09-15T00:00:00.000Z',
     caveats:['Counts are candidates for review, not measured misses; the judge sees a trimmed window, not the session.','Skills with no recorded placement date were left out of the catalogue and cannot appear here.']});
   }),
-  usage:async({ref})=>{
-   const name=ref.replace(/^local:/,'').split('/').pop()??ref;
-   const placed:Record<string,{d1:number;d2:number}>={'deploy-check':{d1:0,d2:4},'release-notes':{d1:3,d2:1},'pr-review':{d1:0,d2:0}};
-   const loose:Record<string,{d1:number;d2:number}>={'incident-triage':{d1:1,d2:3}};
-   const hit=placed[name]??loose[name],isPlaced=placed[name]!==undefined;
-   const ratio=(c:{d1:number;d2:number})=>c.d1+c.d2===0?null:c.d1/(c.d1+c.d2);
-   return ok({firings:hit===undefined?null:{...hit,autonomy:ratio(hit),availability:isPlaced?'full' as const:'unknown' as const,placed:isPlaced},
-    since:'2026-08-16T00:00:00.000Z',until:'2026-09-15T00:00:00.000Z',
-    caveats:['Counts are invocations, not outcome-changing uses; reopenings are not deduped.','30-day window: Claude Code prunes transcripts, so earlier use is visible only where this machine has already archived it.']});
-  },
+  /** The whole machine's fixture firings, ONE report per window the way the real adapter reads one
+   *  (`usage --json`, no ref) and every surface projects (lib/activation.ts). See mock/usage.ts for
+   *  the days behind it. */
+  usage:async(q)=>ok(mockUsage(q?.days??30)),
   evalReport:async({ref})=>{const detail=await backend.skill({ref});if(!detail.ok)return detail;const {receipt,summary,incumbentLift,reportNumbers,history,versions,latestState,invalidReceiptFile,localRuns,evalEstimate,evalEstimateText,evalEstimateTip,scoreFractions,wlt}=detail.value;return ok({receipt,summary,incumbentLift,reportNumbers,history,versions,latestState,invalidReceiptFile,localRuns,evalEstimate,evalEstimateText,evalEstimateTip,scoreFractions,wlt});},
   receipts:({skillId,version})=>read('library',()=>{const detail=skillByRef(skillId);if(!detail.ok)return fail(detail.error);return ok(detail.value.version===version?detail.value.receipt??null:null);}),
   inbox:()=>read('inbox',scenario=>ok(scenario==='empty'?[]:inboxItems())),

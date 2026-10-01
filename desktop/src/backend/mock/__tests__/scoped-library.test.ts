@@ -15,9 +15,9 @@ it.each(['Global','Terum','SSM','MRF'] as const)('serves the exact %s title and 
  const result=await createMockBackend().library({scope:scope==='Global'?{kind:'global'}:{kind:'checkout',root:'/Users/you/code/'+scope.toLowerCase()}});
  expect(result.ok).toBe(true);
  expect(result.value?.title).toBe(design.DERIVED.libraryTitles[scope]);
- // The two Unpublished strings and its zero caption are app copy the generated fixture cannot carry.
- expect(result.value?.overview).toEqual({...design.OVERVIEW_BY_SCOPE[scope],installs:'—',unpublished:result.value?.overview.unpublished,unpublished_note:result.value?.overview.unpublished_note,zero:{...design.OVERVIEW_BY_SCOPE[scope].zero,unpublished:overviewCopy.unpublished}});
- expect(result.value?.overview.unpublished).toMatch(/^(\d+|—)$/);
+ // The publish-state line under Skills and the Activation tile's zero caption are app copy the generated fixture cannot carry.
+ expect(result.value?.overview).toEqual({...design.OVERVIEW_BY_SCOPE[scope],installs:'—',unpublished_line:result.value?.overview.unpublished_line,zero:{...design.OVERVIEW_BY_SCOPE[scope].zero,activation:overviewCopy.activation}});
+ expect(result.value?.overview.unpublished_line).toMatch(/^(\d+ unpublished.*|.*unknown publish state|All published to the marketplace|)$/);
  expect(result.value?.skills).toHaveLength(Number(design.COUNTS[scope]));
  expect(result.value?.title).toBe(`${result.value?.skills.length} skills`);
  const status=await createMockBackend().status();const root=status.value?.roots.find(root=>root.label===scope);

@@ -61,8 +61,8 @@ it('derives the eval meter and caption from the same receipts as the count (B1)'
  expect(result.value.overview.meter_text).not.toBe(overviewCopy.evaluated);
 });
 // §4.3: 'none' is a folder tied to no team skill — never published. A CLI too old to report the
-// overlay leaves the count unknowable, and the tile takes a dash over a fabricated zero.
-it('counts never-published folders, and reports a dash when the overlay is absent (B1)',async()=>{
+// overlay leaves the count unknowable, and the Skills tile's line says nothing over a fabricated zero.
+it('counts never-published folders, and says nothing when the overlay is absent (B1)',async()=>{
  const withMatch=(matchedVersion:string|null,knownToTeam:boolean)=>({matchedVersion,knownToTeam,placement:null});
  const f=chromeLibraryReplay({local:value=>{
   const section=value.local[0]!,row=section.rows[0]!;
@@ -70,17 +70,17 @@ it('counts never-published folders, and reports a dash when the overlay is absen
  }});
  const counted=await createTauriBackend(f.bridge).library(global);
  expect(counted.ok).toBe(true);if(!counted.ok)throw new Error(counted.error);
- expect(counted.value.overview).toMatchObject({unpublished:'2',unpublished_note:'never published to the marketplace'});
+ expect(counted.value.overview).toMatchObject({unpublished_line:'2 unpublished'});
  const unknown=await createTauriBackend(chromeLibraryReplay().bridge).library(global);
  expect(unknown.ok).toBe(true);if(!unknown.ok)throw new Error(unknown.error);
- expect(unknown.value.overview).toMatchObject({unpublished:'—',unpublished_note:''});
+ expect(unknown.value.overview).toMatchObject({unpublished_line:''});
 });
 
-// The dash used to be the ONLY thing this tile ever drew on a real machine: a not-offered folder gets its
+// A dash used to be the ONLY thing the old tile ever drew on a real machine: a not-offered folder gets its
 // card from `notOfferedCard`, which carries no overlay key at all, and one such card sank the whole count.
-// Every machine has at least one — setup places the bundled manual — so the count now names its unknowns
+// Every machine has at least one — setup places the bundled manual — so the line now names its unknowns
 // beside a real number, and the manual itself is out of the reckoning (it can never become a team skill).
-it('counts around the folders the CLI could not offer instead of dashing the tile (B1)',async()=>{
+it('counts around the folders the CLI could not offer instead of going silent (B1)',async()=>{
  const notOffered=(name:string,reason:string)=>({skillId:null,name,path:'/Users/teddy/.claude/skills/'+name,reason,detail:reason==='invalid-yaml'?'SKILL.md frontmatter is not valid YAML.':'',description:null,frontmatter:null,body:null,category:null,characters:null});
  const f=chromeLibraryReplay({local:value=>{
   const section=value.local[0]!,row=section.rows[0]!;
@@ -90,7 +90,7 @@ it('counts around the folders the CLI could not offer instead of dashing the til
  const result=await createTauriBackend(f.bridge).library(global);
  expect(result.ok).toBe(true);if(!result.ok)throw new Error(result.error);
  expect(result.value.skills).toHaveLength(4);
- expect(result.value.overview).toMatchObject({unpublished:'1',unpublished_note:'never published to the marketplace · 1 folder with an unknown publish state'});
+ expect(result.value.overview).toMatchObject({unpublished_line:'1 unpublished · 1 with an unknown publish state'});
 });
 // A library whose every publishable folder is known needs no hedge, and the bundled manual must not add one.
 it('reads a clean zero when only the bundled manual is unplaceable (B1)',async()=>{
@@ -101,7 +101,7 @@ it('reads a clean zero when only the bundled manual is unplaceable (B1)',async()
  }});
  const result=await createTauriBackend(f.bridge).library(global);
  expect(result.ok).toBe(true);if(!result.ok)throw new Error(result.error);
- expect(result.value.overview).toMatchObject({unpublished:'0',unpublished_note:''});
+ expect(result.value.overview).toMatchObject({unpublished_line:'All published to the marketplace'});
 });
 
 // disablePerMachine (2026-09-14): `enabled` is read off the CLI row, which read it off Claude Code's skillOverrides; a CLI too old to send the key reads as enabled, never as off.

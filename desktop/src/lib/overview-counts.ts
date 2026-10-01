@@ -24,7 +24,7 @@ export function evaluatedOverview(skills:readonly SkillCard[]):{evaluated:string
  *  Bundled folders are out of the reckoning entirely — the manual setup places can never become a
  *  team skill (BUNDLED_NOTE), so it is neither unpublished nor an unknown, just not publishable.
  *  This is the same predicate `libraryVersionLabel` (components/domain/presentation.ts) uses to label
- *  a card 'Unpublished', including its "say nothing rather than guess" rule for null — the tile and
+ *  a card 'Unpublished', including its "say nothing rather than guess" rule for null — the caption and
  *  the cards it counts must not disagree about what unpublished means.
  *  NOTE: this counts NEVER-PUBLISHED only. Locally-modified-since-publish ('differs') is a distinct
  *  state and is deliberately excluded — see the PR description. */
@@ -33,15 +33,18 @@ export function unpublishedCount(skills:readonly SkillCard[]):{count:number;unkn
  return {count:publishable.filter(skill=>skill.localMatch==='none').length,unknown:publishable.filter(skill=>skill.localMatch===null).length,total:publishable.length};
 }
 
-/** The Unpublished tile's number and the caption under it, from one count — so the tile can no more
- *  claim "Everything here is published" over a nonzero number than the Evaluated tile could claim
- *  "Nothing evaluated yet" over one. The dash is kept for the one case that earns it: NOTHING is
- *  known, so any number would be fabricated. With even one folder placed, the number is what is known
- *  and the caption names the remaining unknowns rather than hiding them behind a dash. */
-export function unpublishedOverview(skills:readonly SkillCard[]):{unpublished:string;unpublished_note:string} {
+/** The publish-state caption under the Skills tile, from one count (until 2026-09-21 this was the
+ *  fourth tile's number, which the Activation tile now occupies). One line, and a line that never
+ *  contradicts the count it is read from: a nonzero count names itself, a zero over unplaced folders
+ *  names the unknowns instead of claiming a clean sheet, and when NOTHING is known — every folder
+ *  unknown, or no folder at all — the line is empty rather than a fabricated number or a hedge with
+ *  nothing behind it. "All published" is earned only by a library with no unknowns left. The word is
+ *  the cards' own — `libraryVersionLabel` writes 'Unpublished' on each such card — so the caption and
+ *  the grid under it say the same thing. */
+export function unpublishedLine(skills:readonly SkillCard[]):string {
  const {count,unknown,total}=unpublishedCount(skills);
- if(unknown>0&&unknown===total)return {unpublished:'—',unpublished_note:''};
- const unknownNote=unknown===0?'':`${unknown} folder${unknown===1?'':'s'} with an unknown publish state`;
- if(count===0)return {unpublished:'0',unpublished_note:unknownNote};
- return {unpublished:String(count),unpublished_note:'never published to the marketplace'+(unknownNote?' · '+unknownNote:'')};
+ if(total===0||unknown===total)return '';
+ const unknownNote=unknown===0?'':`${unknown} with an unknown publish state`;
+ if(count>0)return `${count} unpublished`+(unknownNote?' · '+unknownNote:'');
+ return unknownNote||'All published to the marketplace';
 }

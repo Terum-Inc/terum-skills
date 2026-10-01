@@ -68,6 +68,35 @@ describe('aggregate — availability is reconstructed, never assumed (§2.2)', (
   });
 });
 
+describe('aggregate — the daily buckets are the same tally by local day', () => {
+  // Noon UTC keeps every timezone within ±11h on the same calendar date, so the buckets below are
+  // the same on a CI runner in UTC and a laptop in California or Tokyo.
+  const noon = (date: string): string => `${date}T12:00:00.000Z`;
+
+  it('buckets each fired name by day and kind, and sums to the row totals', () => {
+    const events = [fire('D1', 'a', noon('2026-09-01')), fire('D2', 'a', noon('2026-09-01')), fire('D1', 'a', noon('2026-09-03')), fire('D2', 'loose', noon('2026-09-02'))];
+    const report = aggregate(events, [placed('a')], WINDOW);
+    expect(report.daily).toEqual([
+      { day: '2026-09-01', skill: 'a', d1: 1, d2: 1 },
+      { day: '2026-09-02', skill: 'loose', d1: 0, d2: 1 },
+      { day: '2026-09-03', skill: 'a', d1: 1, d2: 0 },
+    ]);
+    const a = report.daily.filter((bucket) => bucket.skill === 'a');
+    expect(a.reduce((sum, bucket) => sum + bucket.d1, 0)).toBe(report.rows[0]!.d1);
+    expect(a.reduce((sum, bucket) => sum + bucket.d2, 0)).toBe(report.rows[0]!.d2);
+  });
+
+  it('keeps events outside the window out of the buckets too', () => {
+    const report = aggregate([fire('D1', 'a', '2026-08-15T12:00:00.000Z')], [placed('a')], WINDOW);
+    expect(report.daily).toEqual([]);
+  });
+
+  it('carries the ledger date on the row, null when the ledger has none', () => {
+    const report = aggregate([], [placed('dated', '2026-09-01T00:00:00.000Z'), placed('undated', null)], WINDOW);
+    expect(report.rows.map((row) => [row.skill, row.placedAt])).toEqual([['dated', '2026-09-01T00:00:00.000Z'], ['undated', null]]);
+  });
+});
+
 describe('aggregate — order is the report argument', () => {
   it('puts never-chosen-but-used skills first and never-fired last', () => {
     const events = [fire('D2', 'handoff'), fire('D2', 'handoff'), fire('D1', 'chosen')];

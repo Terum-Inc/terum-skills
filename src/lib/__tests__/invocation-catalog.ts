@@ -1945,7 +1945,7 @@ export const invocationLiteralCatalog: readonly { file: string; line: number; po
     "file": "docs/contributing/release.md",
     "line": 38,
     "policy": "prose",
-    "pattern": "Dispatch with `dry_run=true` first. A dry run runs `validate`, `build`, `desktop` and `audit`, so it proves the gates, the tarball and the desktop matrix, and it performs neither the npm write nor the GitHub write. It does not exercise the `npm` environment approval: `publish` is the job that declares that environment, and a dry run skips it (`release.yml:296-298`). Then re-dispatch with the same `expected_version` and `expected_sha` and `dry_run=false`."
+    "pattern": "Dispatch with `dry_run=false` directly unless `.github/workflows/release.yml` changed since the last release. A real run already stops before anything is written when `validate`, `build` or `desktop` fails, because `publish` needs all three, so for a routine version bump a dry run only repeats that work. `git diff --stat v<previous version> origin/main -- .github/workflows/release.yml` prints nothing when the workflow is unchanged. When `release.yml` did change, dispatch with `dry_run=true` first: a dry run runs `validate`, `build`, `desktop` and `audit`, which proves the gates, the tarball and the desktop matrix, and it performs neither the npm write nor the GitHub write. It does not exercise the `npm` environment approval: `publish` is the job that declares that environment, and a dry run skips it (`release.yml:296-298`). Once it passes, re-dispatch with the same `expected_version` and `expected_sha` and `dry_run=false`."
   },
   {
     "file": "docs/contributing/release.md",
@@ -2527,49 +2527,73 @@ export const invocationLiteralCatalog: readonly { file: string; line: number; po
     "file": "docs/evaluating/usage.md",
     "line": 184,
     "policy": "prose",
-    "pattern": "unreadable transcripts) and `usedArchive`. Every row carries `skill`, `label`, `d1`, `d2`,"
-  },
-  {
-    "file": "docs/evaluating/usage.md",
-    "line": 205,
-    "policy": "prose",
-    "pattern": "That is what `misses` separates. It harvests the prompts you actually typed out of the same"
+    "pattern": "(the unreadable transcripts) and `usedArchive`. Every row carries `skill`, `label`, `d1`, `d2`,"
   },
   {
     "file": "docs/evaluating/usage.md",
     "line": 208,
     "policy": "prose",
+    "pattern": "That is what `misses` separates. It harvests the prompts you actually typed out of the same"
+  },
+  {
+    "file": "docs/evaluating/usage.md",
+    "line": 211,
+    "policy": "prose",
     "pattern": "reasons: it spends model calls, and `usage` promises it makes none, which is what lets the app run"
   },
   {
     "file": "docs/evaluating/usage.md",
-    "line": 209,
+    "line": 212,
     "policy": "prose",
     "pattern": "`usage` on every skill page."
   },
   {
     "file": "docs/evaluating/usage.md",
-    "line": 212,
+    "line": 215,
     "policy": "fixed",
     "pattern": "npx -y terum-skills@latest misses [skill] [--since <iso>] [--limit <n>] [--json]"
   },
   {
     "file": "docs/evaluating/usage.md",
-    "line": 220,
+    "line": 224,
     "policy": "prose",
-    "pattern": "A skill's **Activity** tab draws these counts and only these counts. It runs `usage --json` once,"
+    "pattern": "`usage --json` with no skill argument and joins the result to whatever it is drawing by skill name."
   },
   {
     "file": "docs/evaluating/usage.md",
-    "line": 221,
+    "line": 225,
     "policy": "prose",
-    "pattern": "with no skill argument, and filters client-side: `usage <skill>` costs the same whole-corpus scan as"
+    "pattern": "`usage <skill>` costs the same whole-corpus scan as an unfiltered one, so one read serves every skill"
   },
   {
     "file": "docs/evaluating/usage.md",
-    "line": 236,
+    "line": 240,
     "policy": "prose",
-    "pattern": "The CLI's two caveats are repeated underneath, verbatim. On a terum-skills version that cannot report"
+    "pattern": "further back it goes on a machine that has not run `usage` for long."
+  },
+  {
+    "file": "docs/evaluating/usage.md",
+    "line": 255,
+    "policy": "prose",
+    "pattern": "setup places is left out of the reckoning: it is reached for by name by design and would brand itself"
+  },
+  {
+    "file": "docs/evaluating/usage.md",
+    "line": 259,
+    "policy": "prose",
+    "pattern": "The tile reads `usage` itself rather than through the Library read, so the transcript scan never"
+  },
+  {
+    "file": "docs/evaluating/usage.md",
+    "line": 261,
+    "policy": "prose",
+    "pattern": "scan runs, a dash with the CLI's error if it fails, a dash with `This terum-skills version cannot"
+  },
+  {
+    "file": "docs/evaluating/usage.md",
+    "line": 338,
+    "policy": "prose",
+    "pattern": "On a terum-skills version that cannot report firings, the tab says so and offers nothing; a failed"
   },
   {
     "file": "docs/frame-protocol.md",
@@ -4121,307 +4145,319 @@ export const invocationLiteralCatalog: readonly { file: string; line: number; po
   },
   {
     "file": "docs/guides/desktop-app.md",
-    "line": 88,
+    "line": 90,
+    "policy": "prose",
+    "pattern": "The Activation tile is the Library's view of [`usage`](../evaluating/usage.md): how many of this root's skills fired on this machine in the window, as `4 of 15`, over a three-segment meter and its caption, `3 chosen by the model · 1 by name only · 11 never fired`. Chosen means the model picked the skill from its description at least once; by name only means it fired only because a person named it, which is the finding `usage` exists for; never fired is everything else on the board. Under that is the window and any hedge the counts need (`last 30 days · 1 placed mid-window`). The tile reads `usage --json` itself, once for the whole machine and shared with every skill page, so a slow transcript scan never holds the cards back: it draws a skeleton while the scan runs, a dash with the CLI's error if the scan fails, and a dash with `This terum-skills version cannot report skill firings.` when the CLI predates the verb. An empty library reads `Nothing fired yet`. The manual that setup places is left out of the count."
+  },
+  {
+    "file": "docs/guides/desktop-app.md",
+    "line": 92,
+    "policy": "prose",
+    "pattern": "Clicking the Activation tile opens the **Activation** popup, a link in the URL as `?dialog=activation`. It holds three rows on one date axis (the running total of fires beside the window before, misfires from the latest miss screening, and how many skills have gone a full window without firing), then one row per skill with its firings by day, who started them, its misfires, when it last fired and its eval verdict, then **Worth a look**: what stands out, in counts, such as a skill that only fires when named or one that passes its evals and never fires. Its picker sets the window for the tile too, 30 days, 90 days or 1 year, in the URL as `?window=`. The longer windows reach into this machine's `usage` archive. Misfires come only from a screening a person starts; nothing spends a model call on its own."
+  },
+  {
+    "file": "docs/guides/desktop-app.md",
+    "line": 94,
     "policy": "prose",
     "pattern": "Each card carries the skill's project and category, its name, description, version line, size, any install count, and its flags. A card for a folder on this machine also carries the per-machine switch: it runs `skill enable` or `skill disable`, which writes Claude Code's own `skillOverrides` setting. See [Claude Code integration](claude-code-integration.md)."
   },
   {
     "file": "docs/guides/desktop-app.md",
-    "line": 95,
+    "line": 101,
     "policy": "prose",
     "pattern": "| Sync | Runs `sync`, then `reconcile --list`, and opens the reconcile dialog |"
   },
   {
     "file": "docs/guides/desktop-app.md",
-    "line": 96,
+    "line": 102,
     "policy": "prose",
     "pattern": "| Add project | Opens a folder chooser, then runs `project add` on what you chose |"
   },
   {
     "file": "docs/guides/desktop-app.md",
-    "line": 97,
+    "line": 103,
     "policy": "prose",
     "pattern": "| Drag a folder onto the board | One `project add` per dropped folder |"
   },
   {
     "file": "docs/guides/desktop-app.md",
-    "line": 98,
+    "line": 104,
     "policy": "prose",
     "pattern": "| Right-click a project row | Show in Finder, Copy path, Rename… (runs `project rename --to <name> -- <path>`, a display name only) and Manage projects… |"
   },
   {
     "file": "docs/guides/desktop-app.md",
-    "line": 101,
+    "line": 107,
     "policy": "prose",
     "pattern": "The card menu runs one verb each: Run eval (`eval`), and for a folder no team has, Move to… (`skill move`), Copy to… (`skill copy`), Rename… (`skill rename`), Delete… (`skill delete`). For a team skill it offers Install… (`install`), Reinstall… when your people file records the install but nothing is on this machine, or Uninstall… (`uninstall-skill`) instead. Publish to team… (`publish`) and Unpublish… (`unpublish`) are on both. A row the card cannot run is disabled and carries the reason."
   },
   {
     "file": "docs/guides/desktop-app.md",
-    "line": 103,
+    "line": 109,
     "policy": "prose",
     "pattern": "In selection mode each card takes a checkbox and a bar appears above the grid: `N of M selected`, Select all, Clear, `Publish N skills to team…`, and `Evaluate N skills…`. Publishing a selection opens a dialog that lists every selected card as ready or skipped with its reason, offers the publish target, and then runs one `publish` process per skill, one at a time. When it ends the board reports `Published N of M skills` and the count that failed. `Evaluate N skills…` hands the selection to the eval dialog described below."
   },
   {
     "file": "docs/guides/desktop-app.md",
-    "line": 105,
+    "line": 111,
     "policy": "prose",
     "pattern": "Sync is the Library's own two-step: the fetch-only `sync` verb first, so the comparison is against the team as it is now, then `reconcile --list` to see which of your folders match a team version by bytes or by name. When nothing matches, the board says so instead of opening a dialog."
   },
   {
     "file": "docs/guides/desktop-app.md",
-    "line": 109,
+    "line": 115,
     "policy": "prose",
     "pattern": "Opening a card opens its detail page. A team skill is addressed by name; a folder the team has never seen is addressed by its path. The page reads `ls --local`, `ls --team`, `status`, `validate` and `eval-report`."
   },
   {
     "file": "docs/guides/desktop-app.md",
-    "line": 118,
+    "line": 124,
     "policy": "prose",
-    "pattern": "| Activity | Live firing counts for this skill, from `usage` |"
+    "pattern": "| Activity | Live firings for this skill, from `usage`: four figures for the window (firings, active days, longest streak, last fired), one note when the firings raise one (never chosen from its description, placed and never fired), the last year as a contributions-style calendar with the window bracketed under it, what happened since placement, and the prompts a miss screening found it should have caught. The window picker (30 days, 90 days, 1 year) lives in the URL as `?window=` |"
   },
   {
     "file": "docs/guides/desktop-app.md",
-    "line": 124,
+    "line": 130,
     "policy": "fixed",
     "pattern": "Every action names the command it runs, and each dialog shows that `npx -y terum-skills@latest …` line before you confirm."
   },
   {
     "file": "docs/guides/desktop-app.md",
-    "line": 128,
+    "line": 134,
     "policy": "prose",
     "pattern": "| Install | `install [--team <t>] [--into <root>] -- <ref>` |"
   },
   {
     "file": "docs/guides/desktop-app.md",
-    "line": 129,
+    "line": 135,
     "policy": "prose",
     "pattern": "| Remove | `uninstall-skill [--team <t>] [--from global\\|<root>] -- <ref>` |"
   },
   {
     "file": "docs/guides/desktop-app.md",
-    "line": 130,
+    "line": 136,
     "policy": "prose",
     "pattern": "| Publish | `publish [--team <t>] [--project <p>] [--category <c>] -- <ref>` |"
   },
   {
     "file": "docs/guides/desktop-app.md",
-    "line": 131,
+    "line": 137,
     "policy": "prose",
     "pattern": "| Unpublish | `unpublish [--team <t>] --yes -- <ref>`, behind typing the skill's name |"
   },
   {
     "file": "docs/guides/desktop-app.md",
-    "line": 132,
+    "line": 138,
     "policy": "prose",
     "pattern": "| Run eval | `eval [--k <n>] [--model <m>] [--judge-model <m>] [--team <t>] -- <ref>` |"
   },
   {
     "file": "docs/guides/desktop-app.md",
-    "line": 133,
+    "line": 139,
     "policy": "prose",
     "pattern": "| Enable / disable | `skill enable -- <path>` / `skill disable -- <path>` |"
   },
   {
     "file": "docs/guides/desktop-app.md",
-    "line": 134,
+    "line": 140,
     "policy": "prose",
     "pattern": "| Move, Copy, Rename, Delete | `skill move`, `skill copy`, `skill rename`, `skill delete` |"
   },
   {
     "file": "docs/guides/desktop-app.md",
-    "line": 135,
+    "line": 141,
     "policy": "prose",
     "pattern": "| Fix | `skill fix -- <path>` |"
   },
   {
     "file": "docs/guides/desktop-app.md",
-    "line": 136,
+    "line": 142,
     "policy": "prose",
     "pattern": "| Change category | `skill category --to <name> -- <path>` |"
   },
   {
     "file": "docs/guides/desktop-app.md",
-    "line": 139,
+    "line": 145,
     "policy": "prose",
     "pattern": "There is no Validate control. The page runs `validate` as part of its own read, but the button that runs it again sits on the Quality tab, which is not shipped. Fix is offered beside the `broken` flag instead, and that flag comes from `ls --local`."
   },
   {
     "file": "docs/guides/desktop-app.md",
-    "line": 145,
+    "line": 151,
     "policy": "prose",
     "pattern": "The Marketplace is the team's published skills, read from the team repo clone with `status`, `ls --team` and `ls --local`. Nothing here fetches. The home board is a search box over four shelves: Top rated, Teams / Projects, People and Browse by category. Three of them open a list view of their own, and each list view carries its own search and a sort toggle between the drawn ranking and A to Z. Teams / Projects has no list view: a team project opens its own page straight from the shelf, as a person does. Top rated is ordered by install count, which its own subtitle says: `by installs, from people files`. Nothing in the app ranks by eval outcome, so the name promises more than the data carries."
   },
   {
     "file": "docs/guides/desktop-app.md",
-    "line": 147,
+    "line": 153,
     "policy": "prose",
     "pattern": "A team project's page installs the whole project with `install project <name>`, and its dialog offers the destination the same way the skill dialog does, including an Add project… button that registers a new root first. Removing runs `uninstall-skill project <name>`. A person's page does the same with `install member <handle>` and `uninstall-skill member <handle>`; what it installs is that person's curated profile list."
   },
   {
     "file": "docs/guides/desktop-app.md",
-    "line": 149,
+    "line": 155,
     "policy": "fixed",
     "pattern": "New project creates a team project by running `team project create [--remote <url>] -- <name>`. Its own terminal hint reads `npx -y terum-skills@latest project create <name>`, which fails when you paste it: there is no top-level `project create`. Use the `team project create` form above."
   },
   {
     "file": "docs/guides/desktop-app.md",
-    "line": 151,
+    "line": 157,
     "policy": "prose",
     "pattern": "A team project is a name and a repository. Skills reach it by being published to it, so the way to add a skill to a project is the publish target on the skill's Publish dialog or in Settings ▸ Publishing, not a control on the project page. The home board's Teams / Projects shelf still says `their skills place when you sync inside the repo`; a fetch places nothing, so a project's skills reach a machine only when someone runs `install`."
   },
   {
     "file": "docs/guides/desktop-app.md",
-    "line": 155,
+    "line": 161,
     "policy": "prose",
     "pattern": "`⌘K` (`Ctrl+K` on Windows and Linux) opens the Search board. It is a screen, not an overlay palette. It runs `search -- <query>` across every configured team, and reads your roots and the catalogue beside it, then groups the results under Skills, Your library, People and Projects. A source that fails prints the CLI's own sentence under its own group; the other groups still render."
   },
   {
     "file": "docs/guides/desktop-app.md",
-    "line": 159,
+    "line": 165,
     "policy": "prose",
     "pattern": "Members reads the roster with `status --permissions` and `ls --team`. The columns are Name, Status (the GitHub permission), Joined, Skills and Last seen, and a Find members box filters them."
   },
   {
     "file": "docs/guides/desktop-app.md",
-    "line": 161,
+    "line": 167,
     "policy": "prose",
     "pattern": "Invite takes one or more GitHub logins, comma or space separated, validated against the same rule the CLI uses, and runs `invite [--team <t>] -- <login>…`. It reports each login as invited, as already having access, or with the CLI's own error. The dialog also shows the block to send your teammate, which is the join command from `status`:"
   },
   {
     "file": "docs/guides/desktop-app.md",
-    "line": 164,
+    "line": 170,
     "policy": "fixed",
     "pattern": "npx -y terum-skills@latest setup <org>/<repo>"
   },
   {
     "file": "docs/guides/desktop-app.md",
-    "line": 174,
+    "line": 180,
     "policy": "fixed",
     "pattern": "npx -y terum-skills@latest team remove <handle>"
   },
   {
     "file": "docs/guides/desktop-app.md",
-    "line": 183,
+    "line": 189,
     "policy": "prose",
     "pattern": "The tour's first step is the exception. `/onboarding/boot` is not the drawn tour but a real `setup` run, streamed into the window with its questions as dialogs, and it is the board setup hands you when it prints `Continuing in the app.`"
   },
   {
     "file": "docs/guides/desktop-app.md",
-    "line": 198,
+    "line": 204,
     "policy": "prose",
     "pattern": "| Name, Email, Default handle | your current values | Saved on blur by `login --set name=… --set email=… --set default-handle=…` |"
   },
   {
     "file": "docs/guides/desktop-app.md",
-    "line": 204,
+    "line": 210,
     "policy": "prose",
     "pattern": "The team card names the team, its remote, its member and skill counts and your handle. Clone shows the working copy and its state. Last fetch shows the stamp and a Sync now button (`sync`). Leave on this machine opens the confirmation for `team leave -- <name>`. Join another team opens a dialog that runs `setup <org>/<repo>`. While a team is configured the row shows `Leave <team> first` in place of the Join button, because Terum Skills keeps one team per machine."
   },
   {
     "file": "docs/guides/desktop-app.md",
-    "line": 215,
+    "line": 221,
     "policy": "prose",
     "pattern": "| Quarantine | What is in quarantine, with Prune… (`prune`), the only thing that deletes it. A CLI that does not report the contents gets one line saying so and no button |"
   },
   {
     "file": "docs/guides/desktop-app.md",
-    "line": 216,
+    "line": 222,
     "policy": "prose",
     "pattern": "| Projects | One row per registered project, a sub-project captioned with its parent, with Rename (`project rename --to <name> -- <path>`) and Remove (`project remove -- <path>`), and a field plus Add (`project add -- <path>`) |"
   },
   {
     "file": "docs/guides/desktop-app.md",
-    "line": 222,
+    "line": 228,
     "policy": "prose",
     "pattern": "Sync now runs `sync`. The row states the automatic policy in the app's own words: at launch and when you come back to the app, at most once a minute. When the last automatic fetch failed, this is where the CLI's first error line and its notices appear. The section repeats the quarantine row and its Prune… button."
   },
   {
     "file": "docs/guides/desktop-app.md",
-    "line": 226,
+    "line": 232,
     "policy": "prose",
     "pattern": "The Skills group is read-only: tracked installs follow the team, pinned installs stay where they are, and a fetch only tells you a newer version exists. Running `install` again is what places it."
   },
   {
     "file": "docs/guides/desktop-app.md",
-    "line": 228,
+    "line": 234,
     "policy": "prose",
     "pattern": "The CLI group has Show update command, which runs `update` and shows the advice it prints. `update` never runs a package manager. Two read-only rows describe the release notice and the release probe: the probe reads release tags from `github.com/ryanliu-terum/terum-skills` at most once a day, and only while a team on this machine lives on GitHub."
   },
   {
     "file": "docs/guides/desktop-app.md",
-    "line": 274,
+    "line": 280,
     "policy": "prose",
     "pattern": "Diagnostics ▸ Status runs `status` in a dialog. The Logs row exists to say there is no log file: the CLI prints as it goes."
   },
   {
     "file": "docs/guides/desktop-app.md",
-    "line": 276,
+    "line": 282,
     "policy": "prose",
     "pattern": "The danger zone runs `uninstall`, the machine teardown. The app renders the CLI's own consent inventory as the confirmation, and refuses to start while an eval is running. See [Uninstalling the app](#uninstalling-the-app)."
   },
   {
     "file": "docs/guides/desktop-app.md",
-    "line": 298,
+    "line": 304,
     "policy": "prose",
     "pattern": "Reads never fetch, so a teammate's commit reaches you only when something runs the fetch-only `sync` verb. The app runs it in the background at two moments: once when it first sees a CLI that supports it, and whenever the window regains focus."
   },
   {
     "file": "docs/guides/desktop-app.md",
-    "line": 308,
+    "line": 314,
     "policy": "prose",
     "pattern": "**Learning about a release.** At launch the app asks the CLI for the state of things with `app-update --check`. The CLI probes the release tags of `github.com/ryanliu-terum/terum-skills` with `git ls-remote --tags`, at most once a day and only while a team on this machine has a GitHub remote. On a machine with no such team the row reads `<version> · release advertisements are not checked on this machine.` Regaining focus repeats the launch check while it has never succeeded, and after an hour re-reads the CLI's answer. Check again and Update and relaunch force a probe now."
   },
   {
     "file": "docs/guides/desktop-app.md",
-    "line": 310,
+    "line": 316,
     "policy": "prose",
     "pattern": "**Staging.** Unless the policy is Ask me, a newer version is downloaded as soon as it is seen: `app-update --stage --release <version>` fetches the asset and its `.sha256` with `gh`, verifies the checksum and the build attestation, unpacks the bundle on macOS, and records it under `~/.terum/skills/app/<version>/`. A version whose download failed or was cancelled is not retried automatically in the same session."
   },
   {
     "file": "docs/guides/desktop-app.md",
-    "line": 320,
+    "line": 326,
     "policy": "prose",
     "pattern": "Install now (and Try again after a failed install) opens one confirmation: `Install <version> and relaunch now?`, with the warning that relaunching closes the window and stops anything the app is running. Relaunch runs `app-update --apply`, which hands the install to a detached process that waits for the app to exit, installs, and starts the new version."
   },
   {
     "file": "docs/guides/desktop-app.md",
-    "line": 327,
+    "line": 333,
     "policy": "fixed",
     "pattern": "npx -y terum-skills@latest app-update --check"
   },
   {
     "file": "docs/guides/desktop-app.md",
-    "line": 328,
+    "line": 334,
     "policy": "fixed",
     "pattern": "npx -y terum-skills@latest app-update --stage --release <version>"
   },
   {
     "file": "docs/guides/desktop-app.md",
-    "line": 329,
+    "line": 335,
     "policy": "fixed",
     "pattern": "npx -y terum-skills@latest app-update --apply --release <version>"
   },
   {
     "file": "docs/guides/desktop-app.md",
-    "line": 334,
+    "line": 340,
     "policy": "fixed",
     "pattern": "**App and CLI versions.** A released app build carries the same version number as the CLI release it ships with, and `npx -y terum-skills@latest app` downloads the app for the CLI version you ran. The app then runs whatever Node binary and CLI entry `app.json` recorded, usually the npx cache copy that ran `app`. The two advance separately after that: the app through this update channel, the CLI through `npx -y terum-skills@latest`. On macOS `app` never downgrades a bundle that is already this version or newer, so after the app has updated itself past your CLI, `app` opens the newer one. Settings ▸ About shows both numbers."
   },
   {
     "file": "docs/guides/desktop-app.md",
-    "line": 344,
+    "line": 350,
     "policy": "prose",
     "pattern": "Settings ▸ Advanced ▸ Remove… runs `uninstall`, which tears down what Terum put on this machine and, on macOS only, deletes the app bundle. It does not remove the npm package; its last lines tell you how."
   },
   {
     "file": "docs/guides/desktop-app.md",
-    "line": 347,
+    "line": 353,
     "policy": "fixed",
     "pattern": "npx -y terum-skills@latest uninstall"
   },
   {
     "file": "docs/guides/desktop-app.md",
-    "line": 350,
+    "line": 356,
     "policy": "prose",
     "pattern": "On macOS this deletes `~/Applications/Terum Skills.app` and the download records under `~/.terum/skills/app`. A copy that is running keeps running until you quit it, and cannot be reopened from the Dock. Running `app` downloads it again."
   },
