@@ -23,7 +23,7 @@ import { run as status } from './commands/status.js';
 import { run as runLs } from './commands/ls.js';
 import { run as readme } from './commands/readme.js';
 import { run as runLeave } from './commands/leave.js';
-import { run as runPublish } from './commands/publish.js';
+import { run as runPublish, runMany as runPublishMany } from './commands/publish.js';
 import { runUnpublish } from './commands/unpublish.js';
 import { run as runSetup } from './commands/setup.js';
 import { run as runGuardPush } from './commands/guardPush.js';
@@ -41,10 +41,10 @@ import { failure, Result } from './lib/result.js';
  * to it. `execute` is injected so the mapping and the exit code are testable without a terminal.
  */
 export type Execute = (invoke: (io: Prompter) => Promise<Result<unknown>>, meta: { verb: string; notices: boolean }) => Promise<void>;
-export interface CliVerbs { skill?: typeof runSkill; skillToggle?: typeof runSkillToggle; project?: typeof runProject; reconcile?: typeof runReconcile; profile?: typeof profile; app?: typeof runApp; appUpdate?: typeof runAppUpdate; update?: typeof runUpdate; login: typeof login; team: TeamCommand; setup?: typeof runSetup; install?: typeof install; uninstall?: typeof uninstall; uninstallMachine?: typeof runUninstallMachine; sync?: typeof sync; prune?: typeof prune; search?: typeof search; invite?: typeof invite; ls?: typeof runLs; status?: typeof status; readme?: typeof readme; publish?: typeof runPublish; unpublish?: typeof runUnpublish; leave?: typeof runLeave; guardPush?: typeof runGuardPush; validate?: typeof runValidate; eval?: typeof runEval; evalReport?: typeof runEvalReport; usage?: typeof runUsage; misses?: typeof runMisses; }
+export interface CliVerbs { skill?: typeof runSkill; skillToggle?: typeof runSkillToggle; project?: typeof runProject; reconcile?: typeof runReconcile; profile?: typeof profile; app?: typeof runApp; appUpdate?: typeof runAppUpdate; update?: typeof runUpdate; login: typeof login; team: TeamCommand; setup?: typeof runSetup; install?: typeof install; uninstall?: typeof uninstall; uninstallMachine?: typeof runUninstallMachine; sync?: typeof sync; prune?: typeof prune; search?: typeof search; invite?: typeof invite; ls?: typeof runLs; status?: typeof status; readme?: typeof readme; publish?: typeof runPublish; publishMany?: typeof runPublishMany; unpublish?: typeof runUnpublish; leave?: typeof runLeave; guardPush?: typeof runGuardPush; validate?: typeof runValidate; eval?: typeof runEval; evalReport?: typeof runEvalReport; usage?: typeof runUsage; misses?: typeof runMisses; }
 
 export function buildProgram(execute: Execute, verbs: CliVerbs = { login, team: runTeam }, context: { form?: InvocationForm; launch?: Launch; noUpdateCheck?: boolean; frames?: boolean; serve?: () => Promise<void> } = {}): Command {
-  const active: Required<CliVerbs> = { skill: verbs.skill ?? runSkill, skillToggle: verbs.skillToggle ?? runSkillToggle, project: verbs.project ?? runProject, reconcile: verbs.reconcile ?? runReconcile, profile: verbs.profile ?? profile, app: verbs.app ?? runApp, appUpdate: verbs.appUpdate ?? runAppUpdate, update: verbs.update ?? runUpdate, login: verbs.login, team: verbs.team, setup: verbs.setup ?? runSetup, install: verbs.install ?? install, uninstall: verbs.uninstall ?? uninstall, uninstallMachine: verbs.uninstallMachine ?? runUninstallMachine, sync: verbs.sync ?? sync, prune: verbs.prune ?? prune, search: verbs.search ?? search, invite: verbs.invite ?? invite, ls: verbs.ls ?? runLs, status: verbs.status ?? status, readme: verbs.readme ?? readme, publish: verbs.publish ?? runPublish, unpublish: verbs.unpublish ?? runUnpublish, leave: verbs.leave ?? runLeave, guardPush: verbs.guardPush ?? runGuardPush, validate: verbs.validate ?? runValidate, eval: verbs.eval ?? runEval, evalReport: verbs.evalReport ?? runEvalReport, usage: verbs.usage ?? runUsage, misses: verbs.misses ?? runMisses };
+  const active: Required<CliVerbs> = { skill: verbs.skill ?? runSkill, skillToggle: verbs.skillToggle ?? runSkillToggle, project: verbs.project ?? runProject, reconcile: verbs.reconcile ?? runReconcile, profile: verbs.profile ?? profile, app: verbs.app ?? runApp, appUpdate: verbs.appUpdate ?? runAppUpdate, update: verbs.update ?? runUpdate, login: verbs.login, team: verbs.team, setup: verbs.setup ?? runSetup, install: verbs.install ?? install, uninstall: verbs.uninstall ?? uninstall, uninstallMachine: verbs.uninstallMachine ?? runUninstallMachine, sync: verbs.sync ?? sync, prune: verbs.prune ?? prune, search: verbs.search ?? search, invite: verbs.invite ?? invite, ls: verbs.ls ?? runLs, status: verbs.status ?? status, readme: verbs.readme ?? readme, publish: verbs.publish ?? runPublish, publishMany: verbs.publishMany ?? runPublishMany, unpublish: verbs.unpublish ?? runUnpublish, leave: verbs.leave ?? runLeave, guardPush: verbs.guardPush ?? runGuardPush, validate: verbs.validate ?? runValidate, eval: verbs.eval ?? runEval, evalReport: verbs.evalReport ?? runEvalReport, usage: verbs.usage ?? runUsage, misses: verbs.misses ?? runMisses };
   const program = new Command();
   program.version(packageVersion() ?? 'version unknown', '-v, --version');
   program.name('terum-skills').description('Share private Claude Code skills through a team git repository.').exitOverride();
@@ -185,12 +185,16 @@ export function buildProgram(execute: Execute, verbs: CliVerbs = { login, team: 
     .action(async (remote: string, url: string, refs: string[]) => execute((io) => active.guardPush({ form: context.form, remote, url, refs }, io), { verb: 'guard-push', notices: false }));
 
   program
-    .command('publish <ref>')
+    .command('publish <ref...>')
     .option('--category <name>', "the skill's terum-category; skips the model suggestion")
     .description("Publish a skill to the team's marketplace: opens a pull request under policy \"pr\", commits directly under policy \"push\"")
     .option('--project <project>', "also list the skill under this team project; without it the skill goes to the marketplace alone")
     .addOption(new Option('--team <team>', 'configured team (required when more than one exists and the ref is bare)').hideHelp())
-    .action(async (ref: string, options: { project?: string; team?: string; category?: string }) => execute((io) => active.publish({ form: context.form, ref, ...options, cwd: process.cwd() }, io), { verb: 'publish', notices: true }));
+    // One skill keeps the single-skill verb exactly as it was; two or more take the batched path,
+    // which asks every question once and pushes once instead of once per skill.
+    .action(async (refs: string[], options: { project?: string; team?: string; category?: string }) => execute((io) => refs.length === 1
+      ? active.publish({ form: context.form, ref: refs[0]!, ...options, cwd: process.cwd() }, io)
+      : active.publishMany({ form: context.form, refs, ...options, cwd: process.cwd() }, io), { verb: 'publish', notices: true }));
 
   program
     .command('unpublish <skill>')

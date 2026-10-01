@@ -34,6 +34,10 @@ const sendable = (cards: SkillCard[]) => cards.filter(card => localActionReason(
 async function enterSelection(backend: Backend) { openWith('#/library/global', backend); await screen.findByText('15 skills'); fireEvent.click(modeButton()); await screen.findByText('0 of 15 selected'); }
 function published(ref: string): Result<PublishResult> { return { ok: true, value: { name: ref.split('/').at(-1) ?? ref, project: null, version: 'v3', created: true, identicalTo: null, attachedEvals: 0, evalAssets: 0, profileAdded: false, projectAdded: false } }; }
 const sentence = (card: SkillCard) => `${card.name} was published to the marketplace as Version 3.`;
+/** `published`'s value alone: what a batched run returns one of per ref, in the order they were given. */
+function publishedValue(ref: string): PublishResult { const result = published(ref); if (!result.ok) throw new Error('fixture'); return result.value; }
+/** A refused item: the batch published the rest and said why this one did not land. */
+const refusedValue = (ref: string, reason: string): PublishResult => ({ ...publishedValue(ref), version: null, created: false, refused: reason });
 function deferred() { let resolve!: () => void; const promise = new Promise<void>(done => { resolve = done; }); return { promise, resolve }; }
 /** Opens the question from the selection bar; it is the URL's `dialog=publish`, so Back closes it. */
 async function openDialog(count: number) { fireEvent.click(screen.getByRole('button', { name: `Publish ${count} skill${count === 1 ? '' : 's'} to team…` })); const dialog = await screen.findByTestId('bulk-publish-dialog'); expect(search().get('dialog')).toBe('publish'); return dialog; }
@@ -141,11 +145,11 @@ it('lists Ready and Skipped rows and never sends a skipped one', async () => {
   expect(rowState(broken.name)).toBe(`Skipped · ${localActionReason(broken, 'publish')}`);
 });
 
-it('publishes the rows one at a time, reports each outcome, and a finished run ends the selection and refreshes the Library', async () => {
+it('publishes the selection in one run, reports each outcome, and a finished run ends the selection and refreshes the Library', async () => {
   const backend = createMockBackend();
   const pick = sendable(await globalCards(backend)).slice(0, 3);
-  const gate = deferred(), refs: string[] = [];
-  vi.spyOn(backend, 'publish').mockImplementation(args => { refs.push(args.ref); return createRun(async ctx => { if (args.ref === localRef(pick[0]!)) await gate.promise; ctx.progress(1, 1, 'committing'); return published(args.ref); }); });
+  const gate = deferred(), calls: string[][] = [];
+  vi.spyOn(backend, 'publishMany').mockImplementation(args => { calls.push([...args.refs]); return createRun(async ctx => { ctx.progress(1, args.refs.length, 'committing', args.refs[0]); await gate.promise; return { ok: true, value: args.refs.map(publishedValue) }; }); });
   await enterSelection(backend);
   for (const card of pick) fireEvent.click(checkbox(card.name));
   const dialog = await openDialog(3);
@@ -154,19 +158,21 @@ it('publishes the rows one at a time, reports each outcome, and a finished run e
   // Starting is a URL write that REPLACES, so Back does not reopen the question over the running board.
   expect(search().get('dialog')).toBeNull();
   expect(within(board).getAllByRole('listitem')).toHaveLength(3);
+  // One push for all of them, so every ready row is publishing at once — there is no queue to be
+  // second in. The CLI names the skill it is on, and that row carries the label.
   await waitFor(() => expect(rowState(pick[0]!.name)).toMatch(/^Publishing…/));
-  expect(rowState(pick[1]!.name)).toBe('Queued');
-  expect(rowState(pick[2]!.name)).toBe('Queued');
+  expect(rowState(pick[1]!.name)).toBe('Publishing…');
+  expect(rowState(pick[2]!.name)).toBe('Publishing…');
   // While busy the board offers Stop and "Keep running" — never a Close that could read as a cancel.
   expect(within(board).getByRole('button', { name: 'Stop' })).toBeEnabled();
   expect(within(board).getByRole('button', { name: 'Keep running' })).toBeEnabled();
   expect(within(board).queryByRole('button', { name: 'Close' })).toBeNull();
   expect(chip('Publishing · 0 of 3')).toBeInTheDocument();
-  // The second ref is not even requested until the first run has settled.
-  expect(refs).toEqual([localRef(pick[0]!)]);
+  // One process for the whole selection: every ref in a single call, and the row the CLI named is the
+  // one that lights up — the others wait, exactly as they did when each had a process of its own.
+  expect(calls).toEqual([pick.map(localRef)]);
   const library = vi.spyOn(backend, 'library');
   gate.resolve();
-  await waitFor(() => expect(refs).toEqual(pick.map(localRef)));
   await within(board).findByText('Published 3 of 3 skills');
   for (const card of pick) expect(rowState(card.name)).toBe(sentence(card));
   expect(within(board).queryByRole('button', { name: 'Stop' })).toBeNull();
@@ -190,10 +196,12 @@ it('publishes the rows one at a time, reports each outcome, and a finished run e
   expect(screen.queryByText('Published 3 of 3 skills', { selector: '.library-notice' })).toBeNull();
 });
 
-it('a failing row reports the CLI sentence and the queue goes on', async () => {
+it('a refused skill reports the CLI sentence and the rest of the selection still lands', async () => {
   const backend = createMockBackend();
   const pick = sendable(await globalCards(backend)).slice(0, 3);
-  vi.spyOn(backend, 'publish').mockImplementation(args => createRun(async () => args.ref === localRef(pick[1]!) ? { ok: false, error: 'fatal: the team clone is locked by another publish' } : published(args.ref)));
+  // One bad folder does not cost the others their upload: the batch skips it, publishes the rest in
+  // the same push, and names the reason in that skill's own result (`refused`).
+  vi.spyOn(backend, 'publishMany').mockImplementation(args => createRun(async () => ({ ok: true, value: args.refs.map(ref => ref === localRef(pick[1]!) ? refusedValue(ref, 'fatal: the team clone is locked by another publish') : publishedValue(ref)) })));
   const board = await publishAll(backend, pick);
   await within(board).findByText('Published 2 of 3 skills · 1 failed');
   expect(rowState(pick[0]!.name)).toBe(sentence(pick[0]!));
@@ -204,20 +212,24 @@ it('a failing row reports the CLI sentence and the queue goes on', async () => {
   expect(chip('Published · 2 of 3 · 1 failed')).toHaveAttribute('data-tone', 'failed');
 });
 
-it('Stop mid-queue stops after the active run and keeps the finished outcome', async () => {
+it('Stop before the push lands publishes nothing: one push is all or nothing', async () => {
   const backend = createMockBackend();
   const pick = sendable(await globalCards(backend)).slice(0, 3);
-  vi.spyOn(backend, 'publish').mockImplementation(args => createRun(async ctx => { if (args.ref === localRef(pick[1]!)) await ctx.sleep(60_000); return published(args.ref); }));
+  const gate = deferred();
+  vi.spyOn(backend, 'publishMany').mockImplementation(args => {
+    const run = createRun<PublishResult[]>(async ctx => { ctx.progress(1, args.refs.length, undefined, args.refs[0]); await gate.promise; return { ok: false, error: 'Cancelled.', cancelled: true }; });
+    vi.spyOn(run, 'cancel').mockImplementation(async () => { gate.resolve(); });
+    return run;
+  });
   const board = await publishAll(backend, pick);
-  await waitFor(() => expect(rowState(pick[1]!.name)).toBe('Publishing…'));
-  expect(rowState(pick[0]!.name)).toBe(sentence(pick[0]!));
+  await waitFor(() => expect(rowState(pick[0]!.name)).toBe('Publishing…'));
   fireEvent.click(within(board).getByRole('button', { name: 'Stop' }));
-  await within(board).findByText('Published 1 of 3 skills');
-  expect(rowState(pick[1]!.name)).toBe('Cancelled');
-  expect(rowState(pick[2]!.name)).toBe('Not started');
-  expect(rowState(pick[0]!.name)).toBe(sentence(pick[0]!));
+  // Nothing is in the repository until every skill is committed, so stopping before the push lands
+  // publishes NOTHING. Partial progress is what a push per skill bought, and it is what this costs.
+  await within(board).findByText('Published 0 of 3 skills');
+  for (const card of pick) expect(rowState(card.name)).toBe('Cancelled');
   expect(within(board).getByRole('button', { name: 'Close' })).toBeInTheDocument();
-  expect(chip('Publish stopped · 1 published')).toHaveAttribute('data-tone', 'stopped');
+  expect(chip('Publish stopped · 0 published')).toHaveAttribute('data-tone', 'stopped');
 });
 
 it('a pasted URL with nothing selected renders the empty dialog with Cancel alone', async () => {
@@ -234,70 +246,67 @@ it('a pasted URL with nothing selected renders the empty dialog with Cancel alon
   expect(publish).not.toHaveBeenCalled();
 });
 
-it('a declined question mid-queue is a cancellation: that row reads Cancelled and the rest never start', async () => {
+it('a declined question cancels the whole selection: every row reads Cancelled and nothing is published', async () => {
   const backend = createMockBackend();
   const pick = sendable(await globalCards(backend)).slice(0, 3);
   // driveRun answers a declined PromptContext question with `cancelled:true`; nobody pressed Stop.
-  const publish = vi.spyOn(backend, 'publish').mockImplementation(args => createRun(async () => args.ref === localRef(pick[1]!) ? { ok: false, error: 'Setup was cancelled.', cancelled: true } : published(args.ref)));
+  // The batch asks every question before it writes anything, so a decline costs the selection, not a row.
+  const publishMany = vi.spyOn(backend, 'publishMany').mockImplementation(() => createRun(async () => ({ ok: false, error: 'Publish was cancelled.', cancelled: true })));
   const board = await publishAll(backend, pick);
-  await within(board).findByText('Published 1 of 3 skills');
-  expect(rowState(pick[0]!.name)).toBe(sentence(pick[0]!));
-  expect(rowState(pick[1]!.name)).toBe('Cancelled');
-  expect(rowState(pick[2]!.name)).toBe('Not started');
-  expect(publish).toHaveBeenCalledTimes(2);
+  await within(board).findByText('Published 0 of 3 skills');
+  for (const card of pick) expect(rowState(card.name)).toBe('Cancelled');
+  expect(publishMany).toHaveBeenCalledTimes(1);
 });
 
-it('a publish that finished before its cancel landed is reported as published, with the CLI sentence kept', async () => {
+it('a run that finished before its cancel landed is reported as published, with the CLI sentence kept', async () => {
   const backend = createMockBackend();
   const pick = sendable(await globalCards(backend)).slice(0, 2);
-  const first = published(localRef(pick[0]!));
-  if (!first.ok) throw new Error('fixture');
-  // The real adapter's race settle: ok:false with the sentence AND the value (src/backend/tauri/run.ts).
-  const race: Result<PublishResult> = { ok: false, error: 'Cancelled, but publish had already finished; its changes are on disk.', value: first.value };
   const gate = deferred();
-  vi.spyOn(backend, 'publish').mockImplementation(args => {
-    const run = createRun<PublishResult>(async () => { if (args.ref === localRef(pick[0]!)) { await gate.promise; return race; } return published(args.ref); });
-    if (args.ref === localRef(pick[0]!)) vi.spyOn(run, 'cancel').mockImplementation(async () => { gate.resolve(); });
+  vi.spyOn(backend, 'publishMany').mockImplementation(args => {
+    // The real adapter's race settle: ok:false with the sentence AND the value. One push means the
+    // whole selection landed, so every row keeps its outcome and wears the sentence.
+    const race: Result<PublishResult[]> = { ok: false, error: 'Cancelled, but publish had already finished; its changes are on disk.', value: args.refs.map(publishedValue) };
+    const run = createRun<PublishResult[]>(async ctx => { ctx.progress(1, args.refs.length, undefined, args.refs[0]); await gate.promise; return race; });
+    vi.spyOn(run, 'cancel').mockImplementation(async () => { gate.resolve(); });
     return run;
   });
   const board = await publishAll(backend, pick);
   await waitFor(() => expect(rowState(pick[0]!.name)).toBe('Publishing…'));
   fireEvent.click(within(board).getByRole('button', { name: 'Stop' }));
-  await within(board).findByText('Published 1 of 2 skills');
-  expect(rowState(pick[0]!.name)).toBe(`${sentence(pick[0]!)} Cancelled, but publish had already finished; its changes are on disk.`);
-  expect(rowState(pick[1]!.name)).toBe('Not started');
-  expect(await libraryNotice('Published 1 of 2 skills')).toBeInTheDocument();
-  // A version landed, so the stopped chip counts it.
-  expect(chip('Publish stopped · 1 published')).toBeInTheDocument();
+  await within(board).findByText('Published 2 of 2 skills');
+  for (const card of pick) expect(rowState(card.name)).toBe(`${sentence(card)} Cancelled, but publish had already finished; its changes are on disk.`);
+  expect(await libraryNotice('Published 2 of 2 skills')).toBeInTheDocument();
+  // The versions landed, so the stopped chip counts them.
+  expect(chip('Publish stopped · 2 published')).toBeInTheDocument();
 });
 
 it('any other CLI sentence after Stop is the failure it says, shown verbatim', async () => {
   const backend = createMockBackend();
   const pick = sendable(await globalCards(backend)).slice(0, 2);
   const gate = deferred();
-  vi.spyOn(backend, 'publish').mockImplementation(args => {
-    const run = createRun<PublishResult>(async () => { if (args.ref === localRef(pick[0]!)) { await gate.promise; return { ok: false, error: 'fatal: could not write the receipt' }; } return published(args.ref); });
-    if (args.ref === localRef(pick[0]!)) vi.spyOn(run, 'cancel').mockImplementation(async () => { gate.resolve(); });
+  vi.spyOn(backend, 'publishMany').mockImplementation(args => {
+    const run = createRun<PublishResult[]>(async ctx => { ctx.progress(1, args.refs.length, undefined, args.refs[0]); await gate.promise; return { ok: false, error: 'fatal: could not write the receipt' }; });
+    vi.spyOn(run, 'cancel').mockImplementation(async () => { gate.resolve(); });
     return run;
   });
   const board = await publishAll(backend, pick);
   await waitFor(() => expect(rowState(pick[0]!.name)).toBe('Publishing…'));
   fireEvent.click(within(board).getByRole('button', { name: 'Stop' }));
-  await within(board).findByText('Published 0 of 2 skills · 1 failed');
-  expect(rowState(pick[0]!.name)).toBe('Failed · fatal: could not write the receipt');
-  expect(rowState(pick[1]!.name)).toBe('Not started');
+  // Not a cancellation: the run failed, and one push means it failed for the whole selection.
+  await within(board).findByText('Published 0 of 2 skills · 2 failed');
+  for (const card of pick) expect(rowState(card.name)).toBe('Failed · fatal: could not write the receipt');
 });
 
 // Inverts batch E's "leaving mid-queue cancels the active run": the queue belongs to the app now (North Star).
-it('leaving mid-queue keeps the queue running, starts the next row, and cancels nothing', async () => {
+it('leaving mid-run keeps it running and cancels nothing', async () => {
   const backend = createMockBackend();
   const pick = sendable(await globalCards(backend)).slice(0, 3);
-  const gate = deferred(), refs: string[] = [], cancels: string[] = [];
-  vi.spyOn(backend, 'publish').mockImplementation(args => {
-    refs.push(args.ref);
-    const run = createRun<PublishResult>(async () => { if (args.ref === localRef(pick[1]!)) await gate.promise; return published(args.ref); });
+  const gate = deferred(), calls: string[][] = [], cancels: string[][] = [];
+  vi.spyOn(backend, 'publishMany').mockImplementation(args => {
+    calls.push([...args.refs]);
+    const run = createRun<PublishResult[]>(async ctx => { ctx.progress(1, args.refs.length, undefined, args.refs[1]); await gate.promise; return { ok: true, value: args.refs.map(publishedValue) }; });
     const cancel = run.cancel.bind(run);
-    vi.spyOn(run, 'cancel').mockImplementation(async () => { cancels.push(args.ref); await cancel(); });
+    vi.spyOn(run, 'cancel').mockImplementation(async () => { cancels.push([...args.refs]); await cancel(); });
     return run;
   });
   const board = await publishAll(backend, pick);
@@ -307,10 +316,10 @@ it('leaving mid-queue keeps the queue running, starts the next row, and cancels 
   // Away from the Library altogether — and really gone, so the run settles with no Library on screen to hear it.
   act(() => { location.hash = '#/marketplace'; });
   await waitFor(() => expect(screen.queryByText('15 skills')).toBeNull());
-  expect(chip('Publishing · 1 of 3')).toBeInTheDocument();
+  expect(chip('Publishing · 0 of 3')).toBeInTheDocument();
   expect(cancels).toEqual([]);
   gate.resolve();
-  await waitFor(() => expect(refs).toEqual(pick.map(localRef)));
+  await waitFor(() => expect(calls).toEqual([pick.map(localRef)]));
   await screen.findByRole('button', { name: 'Published · 3 of 3' });
   expect(cancels).toEqual([]);
   // Back in the Library, the run it started but never saw finish is reported now: the chip covered the interim.
@@ -434,46 +443,45 @@ it('the notice belongs to the library it reports: a checkout shows none, Global 
 
 // —— The run host (spec §6, new) ————————————————————————————————————————————————————————————————————————————————
 
-it('dismissing the board leaves the queue running; the chip reopens it with every outcome intact', async () => {
+it('dismissing the board leaves the run going; the chip reopens it with every outcome intact', async () => {
   const backend = createMockBackend();
   const pick = sendable(await globalCards(backend)).slice(0, 2);
-  const gate = deferred(), refs: string[] = [];
-  vi.spyOn(backend, 'publish').mockImplementation(args => { refs.push(args.ref); return createRun(async () => { if (args.ref === localRef(pick[0]!)) await gate.promise; return published(args.ref); }); });
+  const gate = deferred(), calls: string[][] = [];
+  vi.spyOn(backend, 'publishMany').mockImplementation(args => { calls.push([...args.refs]); return createRun(async ctx => { ctx.progress(1, args.refs.length, undefined, args.refs[0]); await gate.promise; return { ok: true, value: args.refs.map(publishedValue) }; }); });
   const board = await publishAll(backend, pick);
   await waitFor(() => expect(rowState(pick[0]!.name)).toBe('Publishing…'));
-  // Escape is a dismiss, not a cancel: the board leaves, the queue does not.
+  // Escape is a dismiss, not a cancel: the board leaves, the run does not.
   fireEvent.keyDown(board, { key: 'Escape' });
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-  expect(refs).toEqual([localRef(pick[0]!)]);
+  expect(calls).toEqual([pick.map(localRef)]);
   expect(chip('Publishing · 0 of 2')).toBeInTheDocument();
   gate.resolve();
-  await waitFor(() => expect(refs).toEqual(pick.map(localRef)));
   fireEvent.click(await screen.findByRole('button', { name: 'Published · 2 of 2' }));
   const reopened = await screen.findByRole('dialog', { name: 'Publish 2 skills to the team?' });
   for (const card of pick) expect(rowState(card.name)).toBe(sentence(card));
   expect(within(reopened).getByText('Published 2 of 2 skills')).toBeInTheDocument();
 });
 
-it('navigating from the Library to a skill page and back mid-queue cancels nothing and loses no row state', async () => {
+it('navigating from the Library to a skill page and back mid-run cancels nothing and loses no row state', async () => {
   const backend = createMockBackend();
   const pick = sendable(await globalCards(backend)).slice(0, 2);
-  const gate = deferred(), cancels: string[] = [];
-  vi.spyOn(backend, 'publish').mockImplementation(args => { const run = createRun<PublishResult>(async () => { if (args.ref === localRef(pick[1]!)) await gate.promise; return published(args.ref); }); vi.spyOn(run, 'cancel').mockImplementation(async () => { cancels.push(args.ref); }); return run; });
+  const gate = deferred(), cancels: string[][] = [];
+  vi.spyOn(backend, 'publishMany').mockImplementation(args => { const run = createRun<PublishResult[]>(async ctx => { ctx.progress(1, args.refs.length, undefined, args.refs[1]); await gate.promise; return { ok: true, value: args.refs.map(publishedValue) }; }); vi.spyOn(run, 'cancel').mockImplementation(async () => { cancels.push([...args.refs]); }); return run; });
   const board = await publishAll(backend, pick);
   await waitFor(() => expect(rowState(pick[1]!.name)).toBe('Publishing…'));
   dismissBoard(board);
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   act(() => { location.hash = '#/skill/deploy-check'; });
   await screen.findByRole('heading', { name: 'deploy-check' });
-  expect(chip('Publishing · 1 of 2')).toBeInTheDocument();
+  expect(chip('Publishing · 0 of 2')).toBeInTheDocument();
   act(() => { location.hash = '#/library/global'; });
   await screen.findByText('15 skills');
-  fireEvent.click(chip('Publishing · 1 of 2'));
+  fireEvent.click(chip('Publishing · 0 of 2'));
   await screen.findByRole('dialog');
-  expect(rowState(pick[0]!.name)).toBe(sentence(pick[0]!));
   expect(rowState(pick[1]!.name)).toBe('Publishing…');
   gate.resolve();
   await waitFor(() => expect(rowState(pick[1]!.name)).toBe(sentence(pick[1]!)));
+  expect(rowState(pick[0]!.name)).toBe(sentence(pick[0]!));
   expect(cancels).toEqual([]);
 });
 
@@ -481,7 +489,7 @@ it('the chip survives completion and is forgotten only by its ✕, never by clos
   const backend = createMockBackend();
   const pick = sendable(await globalCards(backend)).slice(0, 3);
   const gate = deferred();
-  vi.spyOn(backend, 'publish').mockImplementation(args => createRun(async () => { await gate.promise; return args.ref === localRef(pick[1]!) ? { ok: false, error: 'fatal: nope' } : published(args.ref); }));
+  vi.spyOn(backend, 'publishMany').mockImplementation(args => createRun(async () => { await gate.promise; return { ok: true, value: args.refs.map(ref => ref === localRef(pick[1]!) ? refusedValue(ref, 'fatal: nope') : publishedValue(ref)) }; }));
   const board = await publishAll(backend, pick);
   dismissBoard(board);
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
@@ -523,7 +531,7 @@ it('a second start while a publish is in flight is refused with the §4 sentence
   const backend = createMockBackend();
   const pick = sendable(await globalCards(backend)).slice(0, 2);
   const gate = deferred();
-  const publish = vi.spyOn(backend, 'publish').mockImplementation(args => createRun(async () => { await gate.promise; return published(args.ref); }));
+  const publish = vi.spyOn(backend, 'publishMany').mockImplementation(args => createRun(async () => { await gate.promise; return { ok: true, value: args.refs.map(publishedValue) }; }));
   const board = await publishAll(backend, pick);
   dismissBoard(board);
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());

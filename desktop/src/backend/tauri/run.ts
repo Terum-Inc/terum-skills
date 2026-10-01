@@ -118,7 +118,7 @@ export function cliRun<TIn, TOut>(bridge: Bridge, state: Promise<AppState | null
         push({ t: 'ask', id: frame.id, kind: frame.kind, question: frame.question, ...(frame.default === undefined ? {} : { default: frame.default }), ...(frame.choices === undefined ? {} : { choices: frame.choices }), ...(frame.detail === undefined ? {} : { detail: frame.detail }), ...(frame.descriptions === undefined ? {} : { descriptions: frame.descriptions }) });
         return;
       }
-      case 'progress': { const current = frame.current ?? 0; push({ t: 'progress', done: current, total: Math.max(frame.total ?? current, current, 1), label: frame.step }); return; }
+      case 'progress': { const current = frame.current ?? 0; push({ t: 'progress', done: current, total: Math.max(frame.total ?? current, current, 1), label: frame.step, ...(frame.item === undefined ? {} : { item: frame.item }) }); return; }
       case 'result': {
         if (frame.ok) {
           let mapped: TOut | undefined;

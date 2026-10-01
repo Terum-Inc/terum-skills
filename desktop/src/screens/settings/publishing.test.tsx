@@ -90,7 +90,8 @@ it('the skill page dialog starts on the marketplace and sends neither --project 
 
 it('the bulk dialog sends the target to every row and leaves categories to the model', async () => {
   backend.prefs.set(PUBLISH_TARGET_KEY, 'Terum'); backend.prefs.set(PUBLISH_CATEGORY_KEY, CATEGORY_ASK);
-  const publish = vi.spyOn(backend, 'publish').mockImplementation(() => createRun(async () => ({ ok: true, value: published() })));
+  // A selection of many is one batched run, so the flags are asserted on that single call's args.
+  const publish = vi.spyOn(backend, 'publishMany').mockImplementation(args => createRun(async () => ({ ok: true, value: args.refs.map(() => published()) })));
   open('#/library/global?select=1');
   await screen.findByText('0 of 15 selected');
   fireEvent.click(screen.getByRole('button', { name: 'Select all' }));
@@ -101,5 +102,5 @@ it('the bulk dialog sends the target to every row and leaves categories to the m
   expect(within(dialog).getByText(/Suggested per skill by the model/)).toBeInTheDocument();
   await act(async () => { fireEvent.click(within(dialog).getByRole('button', { name: /^Publish \d+ skills$/ })); });
   await waitFor(() => expect(publish).toHaveBeenCalled());
-  for (const call of publish.mock.calls) { expect(call[0].project).toBe('Terum'); expect(call[0].category).toBeUndefined(); }
+  for (const call of publish.mock.calls) { expect(call[0].project).toBe('Terum'); expect(call[0].category).toBeUndefined(); expect(call[0].refs.length).toBeGreaterThan(1); }
 });

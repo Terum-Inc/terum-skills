@@ -9,7 +9,7 @@ export type CliFrame =
   | { t: 'hello'; protocol: number; version: string | null; verbs: readonly string[]; features: Readonly<Record<string, boolean>> }
   | { t: 'print'; level: CliLevel; line: string }
   | { t: 'ask'; id: string; kind: CliAskKind; question: string; default?: string; choices?: readonly string[]; detail?: readonly string[]; descriptions?: readonly string[] }
-  | { t: 'progress'; step: string; current?: number; total?: number }
+  | { t: 'progress'; step: string; current?: number; total?: number; item?: string }
   | { t: 'result'; verb: string; ok: boolean; exitCode: number; error?: string; declined?: boolean; refused?: boolean; value?: unknown };
 export type CliInbound = { t: 'answer'; id: string; value: string | number | boolean } | { t: 'cancel' };
 
@@ -53,6 +53,9 @@ export function parseCliFrame(line: string, diagnostic?: (line: string) => void)
       const frame: Extract<CliFrame, { t: 'progress' }> = { t: 'progress', step: f['step'] };
       if (typeof f['current'] === 'number') frame.current = f['current'];
       if (typeof f['total'] === 'number') frame.total = f['total'];
+      // Which skill the rung is about, when one run works through several. A CLI that predates it
+      // simply omits it, and a shell that cannot use it ignores it.
+      if (str(f['item'])) frame.item = f['item'];
       return frame;
     }
     case 'result': {

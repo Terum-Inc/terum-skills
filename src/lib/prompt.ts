@@ -16,8 +16,16 @@ export interface AskOptions {
   path?: boolean;
 }
 
-/** A verb's report that a long step has moved on. A terminal ignores it; frame mode writes one `progress` frame. */
-export interface ProgressUpdate { step: string; current?: number; total?: number; }
+/**
+ * A verb's report that a long step has moved on. A terminal ignores it; frame mode writes one
+ * `progress` frame.
+ *
+ * `item` names what the rung is about when a verb works through several of them — the skill a
+ * batched publish or install is on right now. Without it a shell driving one process for a whole
+ * selection can only guess which of its rows to light up, and guessing by order is wrong the moment
+ * an item is skipped. Absent for a verb that does one thing.
+ */
+export interface ProgressUpdate { step: string; current?: number; total?: number; item?: string; }
 
 /**
  * §3 library-first: the ONLY channel a verb uses to talk to a human. Verbs never touch

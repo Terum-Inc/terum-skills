@@ -5,7 +5,7 @@ import { AgentRunError, systemAgent, type AgentApi } from '../../lib/evals/agent
 import { run as validate } from '../validate.js';
 import { createConfigStore, type ConfigStore } from '../../lib/config.js';
 import { bareTeam, cloneWithIdentity, git, NonInteractivePrompter, originSha, person, pushFromSeed, ScriptedPrompter, SYMLINKS_SUPPORTED, TEAM_JSON } from '../../lib/__tests__/fixtures.js';
-import { run } from '../publish.js';
+import { run, runMany } from '../publish.js';
 import { receiptSchema } from '../../lib/evals/receipt.js';
 import { DEFAULT_CATEGORY, skillContentDigest } from '../../lib/skills.js';
 import { sourceFiles } from '../../lib/skill-source.js';
@@ -654,5 +654,62 @@ describe('B9 — first-publish category', () => {
     const local = await readFile(join(folder, 'SKILL.md'), 'utf8');
     expect(local).toBe(await show(fixture.bare, 'skills/sample/v1/SKILL.md'));
     expect(local).toContain(`terum-category: ${stored}\n`);
+  });
+});
+
+describe('publish (many)', () => {
+  it('publishes a selection in one push, one commit per skill, each with its own profile entry', async () => {
+    const { fixture, store, home } = await prepared();
+    await librarySkill(home, 'alpha');
+    await librarySkill(home, 'beta');
+    let pushes = 0;
+    const counting: Runner = { run: async (command, commandArgs, options) => { if (command === 'git' && commandArgs[0] === 'push') pushes += 1; return systemRunner.run(command, commandArgs, options); } };
+    const result = await runMany({ refs: ['alpha', 'beta'], home, config: store, runner: counting, category: 'testing' }, new NonInteractivePrompter());
+    expect(result).toMatchObject({ ok: true });
+    if (!result.ok) throw new Error(result.error);
+    expect(result.value.map(entry => [entry.name, entry.version])).toEqual([['alpha', 'v1'], ['beta', 'v1']]);
+    // The whole point: two skills, two commits, ONE push.
+    expect(pushes).toBe(1);
+    const log = (await git(['log', '--format=%s', 'main'], fixture.bare)).split('\n').filter(Boolean);
+    // One commit per skill, in order, plus the single README regeneration a generic remote earns.
+    expect(log.slice(0, 3)).toEqual(['seed: publish', 'seed: publish beta', 'seed: publish alpha']);
+    expect(await show(fixture.bare, 'skills/alpha/v1/SKILL.md')).toContain('name: alpha');
+    expect(await show(fixture.bare, 'skills/beta/v1/SKILL.md')).toContain('name: beta');
+    // D77's profile entry rides in each skill's own commit rather than taking a push of its own.
+    const profile = JSON.parse(await show(fixture.bare, 'people/seed.json')).profile;
+    expect(profile.map((entry: { name: string }) => entry.name).sort()).toEqual(['alpha', 'beta']);
+    expect(result.value.every(entry => entry.profileAdded)).toBe(true);
+  });
+
+  it('refuses the whole selection before any folder is written back', async () => {
+    // OF-2 for a batch: a selection refused at one skill's refusal must leave EVERY folder
+    // byte-identical, not just the ones after it. The managed-field write-back is the only thing a
+    // publish does to the user's own files, and it must not happen for a run that never published.
+    const { fixture, store, home } = await prepared();
+    const alpha = await librarySkill(home, 'alpha');
+    const before = await readFile(join(alpha, 'SKILL.md'), 'utf8');
+    const head = await originSha(store.teamClone('team'));
+    const result = await runMany({ refs: ['alpha', 'missing'], home, config: store, category: 'testing' }, new NonInteractivePrompter());
+    expect(result).toMatchObject({ ok: false });
+    // alpha prepared cleanly and would have been written back had the run continued.
+    expect(await readFile(join(alpha, 'SKILL.md'), 'utf8')).toBe(before);
+    expect(await originSha(store.teamClone('team'))).toBe(head);
+    void fixture;
+  });
+
+  it('reports a selection that is already in the team as nothing to publish, and pushes nothing', async () => {
+    const { fixture, store, home } = await prepared();
+    await librarySkill(home, 'alpha');
+    const first = await runMany({ refs: ['alpha'], home, config: store, category: 'testing' }, new NonInteractivePrompter());
+    expect(first).toMatchObject({ ok: true });
+    const before = await originSha(store.teamClone('team'));
+    const io = new NonInteractivePrompter();
+    const again = await runMany({ refs: ['alpha'], home, config: store, category: 'testing' }, io);
+    expect(again).toMatchObject({ ok: true });
+    if (!again.ok) throw new Error(again.error);
+    expect(again.value[0]).toMatchObject({ name: 'alpha', version: null });
+    expect(io.lines.some(line => line.includes('Nothing to publish: alpha'))).toBe(true);
+    expect(await originSha(store.teamClone('team'))).toBe(before);
+    void fixture;
   });
 });

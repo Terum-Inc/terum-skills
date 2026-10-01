@@ -10,7 +10,7 @@ export type AskKind='confirm'|'text'|'select'|'path';
 /** Carried with a question from the run that asked it: when `signal` aborts, the run has settled and the question is withdrawn. */
 export type PromptOptions={signal?:AbortSignal};
 export interface PromptQuestion {kind:AskKind;question:string;choices?:readonly string[];default?:string;detail?:readonly string[];descriptions?:readonly string[]}
-export type Frame={t:'print';line:string}|{t:'ask';id:string;kind:AskKind;question:string;default?:string;choices?:readonly string[];detail?:readonly string[];descriptions?:readonly string[]}|{t:'progress';done:number;total:number;label?:string}|{t:'result';ok:boolean;error?:string;declined?:boolean;refused?:boolean};
+export type Frame={t:'print';line:string}|{t:'ask';id:string;kind:AskKind;question:string;default?:string;choices?:readonly string[];detail?:readonly string[];descriptions?:readonly string[]}|{t:'progress';done:number;total:number;label?:string;/** The skill this rung is about, when one run works through several (a batched publish). Absent for a verb doing one thing. */item?:string}|{t:'result';ok:boolean;error?:string;declined?:boolean;refused?:boolean};
 export interface Run<T>{readonly frames:AsyncIterable<Frame>;answer(id:string,value:string|boolean):void;cancel():Promise<void>;readonly done:Promise<Result<T>>}
 /** `windowControlsEnd`: right edge, in CSS px from the window's left edge, of the OS controls drawn over the web content under `mac-overlay` (68 before macOS 26, 76 from it); null when the OS draws none there. */
 export interface Capabilities {appVersion:string;windowChrome:'mac-overlay'|'native'|'cosmetic';windowControlsEnd:number|null;disablePerMachine:boolean;inboxEventLog:boolean;offtargetKind:boolean;machineRegistry:boolean;perCaseEvalTables:boolean;openInEditor:boolean;clipboard:boolean}
@@ -157,7 +157,9 @@ export interface PublishArgs {team?:string;ref:string;message?:string;/** ALSO l
  * honest "did anything new land" flag, and it is deliberately not the same question as "did
  * anything change": a publish can add the skill to a project without minting a version.
  */
-export interface PublishResult {name:string;/** The project also listed, or null — the marketplace alone. */project:string|null;version:string|null;created:boolean;identicalTo:string|null;attachedEvals:number;evalAssets:number;profileAdded:boolean;projectAdded:boolean}
+export interface PublishResult {name:string;/** The project also listed, or null — the marketplace alone. */project:string|null;version:string|null;created:boolean;identicalTo:string|null;attachedEvals:number;evalAssets:number;profileAdded:boolean;projectAdded:boolean;/** Why this skill alone was not published, when a batched run refused it and published the rest; null otherwise. */refused?:string|null}
+/** A selection published in one run: one refresh, every question asked once, one push. Order is preserved in the result. */
+export interface PublishManyArgs extends Omit<PublishArgs,'ref'> {refs:readonly string[]}
 export interface UnpublishArgs {team?:string;/** The skill's marketplace name — the `skills/<name>/` folder, never a Library path. */ref:string}
 /**
  * The inverse of `PublishResult`: what the retraction actually removed. Every count is reported so the
