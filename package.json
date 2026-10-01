@@ -1,7 +1,7 @@
 {
   "name": "terum-skills",
   "version": "0.23.0",
-  "description": "Share private Claude Code skills across a team through one private git repo. No server.",
+  "description": "The open source package manager for agent skills. Evaluate skills against a baseline for cost, time and quality, then share the best ones across your team through one private git repo. No server.",
   "license": "Apache-2.0",
   "type": "module",
   "repository": {
@@ -11,10 +11,19 @@
   "bugs": {
     "url": "https://github.com/ryanliu-terum/terum-skills/issues"
   },
-  "homepage": "https://github.com/ryanliu-terum/terum-skills#readme",
+  "homepage": "https://www.terum.ai",
   "keywords": [
-    "claude-code",
+    "agent-skills",
     "skills",
+    "skill-manager",
+    "package-manager",
+    "evals",
+    "llm-evaluation",
+    "ai-agents",
+    "claude-code",
+    "claude-skills",
+    "codex",
+    "cli",
     "team",
     "git"
   ],
