@@ -1,0 +1,44 @@
+name: Release announcement
+
+# Announces each release on Discord through a channel webhook. Needs the DISCORD_WEBHOOK_URL secret.
+#
+# Triggered by the Release workflow finishing, not by `release: published`: release.yml creates the tag
+# and the GitHub Release with GITHUB_TOKEN, and events made with that token start no other workflow.
+# A dry run of release.yml also finishes; it tags nothing, so the script finds no release at the
+# dispatched commit and posts nothing. A recovery run finds its release already published before the
+# run started and posts nothing either.
+
+on:
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to announce (e.g. v0.23.0). Empty means the latest release.'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  announce:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Post to Discord
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          TAG: ${{ inputs.tag }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_STARTED_AT: ${{ github.event.workflow_run.run_started_at }}
+        run: node scripts/release-announcement.mjs ${TAG:+--tag "$TAG"} ${SHA:+--sha "$SHA"}
