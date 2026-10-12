@@ -25,7 +25,7 @@ import { type Runner, systemRunner } from '../lib/runner.js';
 import { inspectSkillSource, sourceFiles } from '../lib/skill-source.js';
 import { findSkill, readTeam, skillContentDigest, skillRecords } from '../lib/skills.js';
 import { parseSkillFrontmatter } from '../lib/schema.js';
-import { refIsPath, resolveLibrarySkill, unusableSkillFolder } from '../lib/local-skills.js';
+import { admitForEval, refIsPath, resolveLibrarySkill, unusableSkillFolder } from '../lib/local-skills.js';
 import { resolveSkillRef } from '../lib/resolve-ref.js';
 import { parseVersionFolder, versionLabel, type SkillVersion } from '../lib/versions.js';
 import { openTeamRepo, refreshClone, lockWait, listVersions, skillVersions } from '../lib/teamRepo.js';
@@ -185,7 +185,9 @@ export async function run(args: EvalArgs, io: Prompter): Promise<Result<EvalResu
     });
     if (!resolved.ok) return failure(resolved.error);
     if (resolved.value.source !== 'library') return failure(`No local skill folder named \`${resolved.value.name}\` in your library; install it from the marketplace first, or pass the folder's path.`);
-    const local = resolved.value.match;
+    // Claude Code's own skill fields (`model`, `argument-hint`, …) are part of what eval measures, so a
+    // folder the scan refused only for those is evaluated as it is (`admitForEval`); `hooks` is not.
+    const local = await admitForEval(resolved.value.match);
     // D72: the folder is there but the scan rejected it or could not read it. Say so, with the
     // scan's own detail against the path — the miss above is reserved for a name no root holds.
     const unusable = unusableSkillFolder(local);
@@ -196,8 +198,9 @@ export async function run(args: EvalArgs, io: Prompter): Promise<Result<EvalResu
     // each one's content digest instead.
     let rival: { name: string; dir: string; id: string | null; digest?: string } | undefined;
     if (args.vs !== undefined) {
-      const rivalMatch = await resolveLibrarySkill(args.home ?? homedir(), config, store.root, args.vs);
-      if (rivalMatch === undefined) return failure(missingSkillFolder(args.vs));
+      const rivalFound = await resolveLibrarySkill(args.home ?? homedir(), config, store.root, args.vs);
+      if (rivalFound === undefined) return failure(missingSkillFolder(args.vs));
+      const rivalMatch = await admitForEval(rivalFound);
       const rivalUnusable = unusableSkillFolder(rivalMatch);
       if (rivalUnusable !== undefined) return failure(rivalUnusable);
       if (resolve(rivalMatch.path) === resolve(local.path)) return failure(`--vs ${args.vs} resolves to the same folder as ${args.ref ?? local.name}; a head-to-head needs two different skills.`);
@@ -239,8 +242,10 @@ export async function run(args: EvalArgs, io: Prompter): Promise<Result<EvalResu
     const candidateDigest = skillContentDigest(candidateFiles.files);
     // §6.1: the id is the FOLDER's declared `metadata.id` when it has one — never the team record's,
     // which may not exist — and null before the folder's first publish. Read through the lenient
-    // inspector, because an unpublished folder legitimately carries no managed fields at all (§6.3).
-    const inspected = inspectSkillSource(candidateFiles.files.get('SKILL.md')?.toString('utf8') ?? '');
+    // inspector, because an unpublished folder legitimately carries no managed fields at all (§6.3),
+    // and with Claude Code's fields accepted, as `admitForEval` accepted them, so a folder that sets
+    // `model` still reports its own id and description.
+    const inspected = inspectSkillSource(candidateFiles.files.get('SKILL.md')?.toString('utf8') ?? '', undefined, { claudeCodeFields: true });
     const skillId = (inspected.ok ? inspected.id : null) ?? record?.id ?? null;
     const description = (inspected.ok ? inspected.description : inspected.description) ?? record?.frontmatter.description ?? '';
     const wantsCases = !args.triggersOnly;
@@ -270,7 +275,7 @@ export async function run(args: EvalArgs, io: Prompter): Promise<Result<EvalResu
       const rivalFiles = await sourceFiles(rival.dir);
       rival.digest = skillContentDigest(rivalFiles.files);
       try {
-        reportHygieneWarnings((line) => io.print(line), assessHygiene(rival.name, rivalFiles, team?.policy.skill_license ?? null, false, true, undefined, 0));
+        reportHygieneWarnings((line) => io.print(line), assessHygiene(rival.name, rivalFiles, team?.policy.skill_license ?? null, false, true, undefined, 0, { claudeCodeFields: true }));
       } catch (error) {
         if (!(error instanceof HygieneRefused)) throw error;
         reportHygieneWarnings((line) => io.print(line), error.assessment);
@@ -282,10 +287,11 @@ export async function run(args: EvalArgs, io: Prompter): Promise<Result<EvalResu
     let heavy = args.heavy;
     try {
       // §6.3: the folder as it is on disk — eval never injects — so HYG1 treats `license` and the
-      // three managed `metadata.*` fields as optional. Every other HYG1 clause and every HYG2–HYG6
-      // predicate stay unchanged and fail-closed. With no team there is no policy license to conform
-      // to, so HYG5 compares the frontmatter against the bundled LICENSE files alone.
-      reportHygieneWarnings((line) => io.print(line), assessHygiene(local.name, candidateFiles, team?.policy.skill_license ?? null, false, true, undefined, dependencies.staged.length + dependencies.skipped.length));
+      // three managed `metadata.*` fields as optional, and accepts Claude Code's own skill fields at the
+      // top level (`claudeCodeFields`). Every other HYG1 clause and every HYG2–HYG6 predicate stay
+      // unchanged and fail-closed. With no team there is no policy license to conform to, so HYG5
+      // compares the frontmatter against the bundled LICENSE files alone.
+      reportHygieneWarnings((line) => io.print(line), assessHygiene(local.name, candidateFiles, team?.policy.skill_license ?? null, false, true, undefined, dependencies.staged.length + dependencies.skipped.length, { claudeCodeFields: true }));
       for (const path of dependencies.staged) io.print(`Staging dependency ${path}`);
       for (const path of dependencies.missing) io.print(`SKILL.md references ${path}, which is not present here; the skill may not run`);
       for (const skipped of dependencies.skipped) io.print(`${skipped.path} is ${(skipped.bytes / (1024 * 1024)).toFixed(1)} MB; staging it would exceed the 20 MB cap; not staged`);
@@ -956,10 +962,11 @@ export async function queueItemsFor(
 ): Promise<EvalQueueItem[]> {
   const items: EvalQueueItem[] = [];
   for (const name of input.names) {
-    const local = await resolveLibrarySkill(input.home, input.config, input.stateRoot, name);
-    if (local === undefined) { report(`${name}: no copy of this skill on this machine, so it cannot be evaluated; install it first.`); continue; }
+    const found = await resolveLibrarySkill(input.home, input.config, input.stateRoot, name);
+    if (found === undefined) { report(`${name}: no copy of this skill on this machine, so it cannot be evaluated; install it first.`); continue; }
     // D72: same rule as the run itself — a folder the scan rejected is named with the scan's detail,
-    // never reported as missing, and costs that folder alone.
+    // never reported as missing, and costs that folder alone. Claude Code's own fields pass, as in `run`.
+    const local = await admitForEval(found);
     const unusable = unusableSkillFolder(local);
     if (unusable !== undefined) { report(`${name}: ${unusable}; it was not queued.`); continue; }
     // Symmetrical with the miss above: one folder that cannot be read costs that folder, not the
@@ -1116,8 +1123,9 @@ export async function runMany(args: EvalManyArgs, io: Prompter): Promise<Result<
     const skills: { ref: string; name: string; path: string }[] = [];
     const add = (ref: string, local: { name: string; path: string }) => { if (!skills.some(skill => skill.path === local.path)) skills.push({ ref, name: local.name, path: local.path }); };
     for (const ref of args.refs) {
-      const local = await resolveLibrarySkill(home, config, store.root, ref);
-      if (!local) return failure(missingSkillFolder(ref));
+      const found = await resolveLibrarySkill(home, config, store.root, ref);
+      if (!found) return failure(missingSkillFolder(ref));
+      const local = await admitForEval(found);
       const unusable = unusableSkillFolder(local);
       if (unusable !== undefined) return failure(unusable);
       add(ref, local);
@@ -1128,8 +1136,9 @@ export async function runMany(args: EvalManyArgs, io: Prompter): Promise<Result<
       const scan = await skillsWithoutReceipt(clone, teamName, line => io.print(line));
       // The wizard's rule: a candidate with no copy on this machine is reported and left out, never run to fail.
       for (const candidate of scan.pending) {
-        const local = await resolveLibrarySkill(home, config, store.root, candidate.name);
-        if (!local) { io.print(`${candidate.name}: no copy of this skill on this machine, so it cannot be evaluated; install it first.`); continue; }
+        const found = await resolveLibrarySkill(home, config, store.root, candidate.name);
+        if (!found) { io.print(`${candidate.name}: no copy of this skill on this machine, so it cannot be evaluated; install it first.`); continue; }
+        const local = await admitForEval(found);
         const unusable = unusableSkillFolder(local);
         if (unusable !== undefined) { io.print(`${candidate.name}: ${unusable}`); continue; }
         add(candidate.name, local);

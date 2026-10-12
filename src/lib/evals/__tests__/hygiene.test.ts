@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assessHygiene, exemptAuthorEmail, formatHygieneWarnings, hygieneFrontmatter, inspectContent, inspectHygiene } from '../hygiene.js';
+import { assessHygiene, exemptAuthorEmail, formatHygieneWarnings, HygieneRefused, hygieneFrontmatter, inspectContent, inspectHygiene, type HygieneInput } from '../hygiene.js';
 
 const ID = '11111111-1111-4111-8111-111111111111';
 const skill = (extra = '', body = '') => `---\nname: sample\ndescription: useful skill\nlicense: Apache-2.0\nmetadata:\n  id: ${ID}\n  author: Author <author@authors.test>\n  terum-category: docs\n${extra}---\n${body}`;
@@ -127,6 +127,40 @@ describe('HYG7 — category taxonomy warning', () => {
     const raw = skill().replace(/metadata:[\s\S]*?---/, `metadata: {id: ${ID}, author: 'Author <author@authors.test>', terum-category: ops}\n---`);
     const result = assessHygiene('sample', { files: new Map([['SKILL.md', Buffer.from(raw)]]), executable: new Set() }, 'Apache-2.0', false, false, categories);
     expect(formatHygieneWarnings(result.warnings)).toContain('warning HYG7 SKILL.md: terum-category');
+  });
+});
+
+describe('HYG1 — Claude Code skill fields (eval only)', () => {
+  const FIELDS = ['model: haiku', 'effort: low', 'context: fork', 'agent: Explore', 'background: false', 'disallowed-tools: AskUserQuestion', 'argument-hint: "[path]"', 'arguments: [path]', 'disable-model-invocation: true', 'user-invocable: false', 'when_to_use: when exploring a codebase'];
+  const local = (extra: string) => `---\nname: sample\ndescription: useful skill\n${extra}---\n`;
+  const hyg1 = (source: string, options: Pick<HygieneInput, 'managedFieldsAbsent' | 'claudeCodeFields'>) => {
+    const files = new Map([['SKILL.md', Buffer.from(source)]]);
+    return inspectHygiene({ name: 'sample', frontmatter: hygieneFrontmatter(files.get('SKILL.md')!), files, executable: new Set(), policy: { skill_license: null }, ...options }).errors.filter((finding) => finding.code === 'HYG1');
+  };
+  const EVAL = { managedFieldsAbsent: true, claudeCodeFields: true };
+  const ACCEPTED = 'name, description, license, metadata, allowed-tools, model, effort, context, agent, background, disallowed-tools, argument-hint, arguments, disable-model-invocation, user-invocable, when_to_use';
+
+  it('accepts every listed field with the eval option, on a local folder and on a published one', () => {
+    const all = FIELDS.map((line) => `${line}\n`).join('');
+    expect(hyg1(local(all), EVAL)).toEqual([]);
+    expect(hyg1(skill(all), EVAL)).toEqual([]);
+    // Through the shared gate, as eval calls it.
+    expect(assessHygiene('sample', { files: new Map([['SKILL.md', Buffer.from(local(all))]]), executable: new Set() }, null, false, true, undefined, 0, { claudeCodeFields: true })).toEqual({ errors: [], warnings: [] });
+  });
+
+  it('still refuses hooks with the eval option, saying why, and any key not on the list', () => {
+    expect(hyg1(local('model: haiku\nhooks:\n  Stop: []\n'), EVAL)).toEqual([{ code: 'HYG1', path: 'SKILL.md', message: `SKILL.md frontmatter is invalid: Unrecognized key: "hooks" (allowed top-level fields: ${ACCEPTED}). The field hooks is refused: hooks register commands that run on this machine, so eval does not run a skill that declares them.` }]);
+    expect(hyg1(local('model: haiku\nfoo: x\n'), EVAL)).toEqual([{ code: 'HYG1', path: 'SKILL.md', message: `SKILL.md frontmatter is invalid: Unrecognized key: "foo" (allowed top-level fields: ${ACCEPTED}).` }]);
+  });
+
+  it.each(FIELDS)('without it, the skill fix and validate schemas still refuse %s', (line) => {
+    const key = line.slice(0, line.indexOf(':'));
+    const refusal = { code: 'HYG1', path: 'SKILL.md', message: `SKILL.md frontmatter is invalid: Unrecognized key: "${key}" (allowed top-level fields: name, description, license, metadata, allowed-tools).` };
+    // `skill fix`: the lenient local schema. `validate`: the strict one, on a folder that carries every managed field.
+    expect(hyg1(local(`${line}\n`), { managedFieldsAbsent: true })).toEqual([refusal]);
+    expect(hyg1(skill(`${line}\n`), {})).toEqual([refusal]);
+    // And through the shared gate with the same positional arguments `skill fix` passes.
+    expect(() => assessHygiene('sample', { files: new Map([['SKILL.md', Buffer.from(local(`${line}\n`))]]), executable: new Set() }, null, false, true)).toThrow(HygieneRefused);
   });
 });
 
