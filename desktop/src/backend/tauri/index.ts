@@ -23,7 +23,7 @@ import { cliRun } from './run';
 import { createReadSession } from './session.js';
 import { prepareRun } from './prepare-run';
 import { cliEvalReport, mapEvalReport, cliReceipt } from './eval-report';
-import { cliUsage, mapUsage } from './usage';
+import { cliUsage, mapUsageReport } from './usage';
 import { cliMisses, mapMisses } from './misses';
 import { receiptSummary } from '../receipt-summary';
 import { relativeTime } from '../../lib/relative-time';
@@ -37,7 +37,7 @@ import { cliRefresh, createRefreshPolicy, createWorkflowGate } from './refresh';
 // shape `cli-tree-imports.test.ts` admits across the tree boundary.
 import { recordedVersionLabel, parseVersionFolder } from '../../../../src/lib/versions.js';
 import { overviewCopy } from '../../lib/overview-copy';
-import { evaluatedOverview, unpublishedOverview } from '../../lib/overview-counts';
+import { evaluatedOverview, unpublishedLine } from '../../lib/overview-counts';
 import { bodyExcerpt } from '../../lib/body-excerpt';
 import { isUnderRoot, samePath } from '../../lib/skill-path';
 
@@ -749,9 +749,14 @@ export function createTauriBackend(bridge: Bridge = tauriBridge()): Backend {
     return inventory.ok ? { ok: true as const, value: { team, inventory: inventory.value, placements: status.value.ledger.placements } } : inventory;
   }
   /** No ref: `usage <skill>` filters after the corpus scan, so a per-skill spawn costs a whole
-   *  rescan and `cached()` would key a separate entry per skill. One read serves every skill page. */
-  async function readUsage(options?:ReadOptions) {
-    return cached(['usage','--json'],cliUsage,options);
+   *  rescan and `cached()` would key a separate entry per skill. One read serves every skill page
+   *  and the Library. The 30-day window is the CLI's own default and passes no flag, so that read's
+   *  argv, and its cache entry, are what they always were; a longer window passes `--since` at a
+   *  UTC midnight, so its argv is the same all day and `cached()` keys one read per window per day
+   *  instead of one per millisecond. */
+  async function readUsage(days:number|undefined,options?:ReadOptions) {
+    const argv=days===undefined||days===30?['usage','--json']:['usage','--json','--since',new Date(Math.floor(Date.now()/86_400_000)*86_400_000-days*86_400_000).toISOString()];
+    return cached(argv,cliUsage,options);
   }
   async function readEvalReport(ref:string,team:string|undefined,options?:ReadOptions) {
     const lines:string[]=[];
@@ -842,7 +847,9 @@ export function createTauriBackend(bridge: Bridge = tauriBridge()): Backend {
         // The Evaluated tile's number, meter and caption come from one derivation over the same
         // receipts (overview-counts.ts) — the meter was previously hard-zeroed and the caption
         // hard-set to the zero copy, so a library with evaluated skills read "2 · Nothing evaluated yet".
-        overview:{skills:String(skills.length),skills_note:'',...evaluatedOverview(skills),...unpublishedOverview(skills),installs:'—',installs_note:'',attention:String(broken),attention_lines:broken?[`${broken} need attention`]:[],attention_link:'',zero:overviewCopy}};
+        // The Activation tile is not here: the row reads `usage` itself (Analytics.tsx), so the
+        // transcript scan never holds the cards back and a failed scan degrades one tile, not the board.
+        overview:{skills:String(skills.length),skills_note:'',...evaluatedOverview(skills),unpublished_line:unpublishedLine(skills),installs:'—',installs_note:'',attention:String(broken),attention_lines:broken?[`${broken} need attention`]:[],attention_link:'',zero:overviewCopy}};
       return {ok:true,value};
     },
     async localSkill({path},options) {
@@ -933,9 +940,9 @@ export function createTauriBackend(bridge: Bridge = tauriBridge()): Backend {
       const {report,lines}=await readEvalReport(ref,team,options);
       return report.ok?{ok:true,value:mapEvalReport(report.value,lines)}:{ok:false,error:report.error};
     },
-    async usage({ref},options) {
-      const report=await readUsage(options);
-      return report.ok?{ok:true as const,value:mapUsage(report.value,ref)}:{ok:false as const,error:report.error};
+    async usage(q,options) {
+      const report=await readUsage(q?.days,options);
+      return report.ok?{ok:true as const,value:mapUsageReport(report.value)}:{ok:false as const,error:report.error};
     },
     /** A one-shot spawn, NOT `cached()` and NOT the serve session. Both of those are read paths:
      *  `cached` would hand a second click a stale answer for a run the user just paid for, and the

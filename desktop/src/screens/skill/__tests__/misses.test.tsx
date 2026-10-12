@@ -17,6 +17,8 @@ async function openActivity(ref = 'deploy-check') {
   location.hash = `#/skill/${ref}?tab=activity`;
   render(<BackendContext value={backend}><QueryClientProvider client={client}><Tooltip.Provider><PromptContext value={async () => true}><PrintContext value={() => undefined}><PublishRunProvider><App/></PublishRunProvider></PrintContext></PromptContext></Tooltip.Provider></QueryClientProvider></BackendContext>);
   await screen.findByRole('region', { name: 'Activity' });
+  // The tab draws the screening beside its figures once the firings reads land.
+  await screen.findByRole('region', { name: 'Misfires' });
   return { backend, spy };
 }
 
@@ -32,10 +34,10 @@ const button = (): HTMLElement => screen.getByRole('button', { name: /Screen for
  */
 it('makes NO model call until the button is clicked', async () => {
   const { spy } = await openActivity();
-  expect(screen.getByText(/Miss screening/)).toBeTruthy();
+  expect(screen.getByRole('region', { name: 'Misfires' })).toBeTruthy();
   expect(spy).not.toHaveBeenCalled();
   // Still nothing after the tab has settled and every other panel has finished reading.
-  await waitFor(() => expect(screen.getByText(/Skill firings/)).toBeTruthy());
+  await waitFor(() => expect(screen.getByText('Active days')).toBeTruthy());
   expect(spy).not.toHaveBeenCalled();
 });
 
@@ -65,7 +67,7 @@ it('shows only THIS skill rows out of the whole-machine result', async () => {
 it('marks a candidate the judge saw with no prior context', async () => {
   await openActivity();
   fireEvent.click(button());
-  await screen.findByText(/no prior context/);
+  await screen.findByText(/no prior context/i);
 });
 
 it('prints the caveats, so a candidate list is never read as a miss rate', async () => {
@@ -99,7 +101,7 @@ it('surfaces an error instead of pretending nothing applied', async () => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   location.hash = '#/skill/deploy-check?tab=activity';
   render(<BackendContext value={backend}><QueryClientProvider client={client}><Tooltip.Provider><PromptContext value={async () => true}><PrintContext value={() => undefined}><PublishRunProvider><App/></PublishRunProvider></PrintContext></PromptContext></Tooltip.Provider></QueryClientProvider></BackendContext>);
-  await screen.findByRole('region', { name: 'Activity' });
+  await screen.findByRole('region', { name: 'Misfires' });
   fireEvent.click(button());
   await screen.findByText(/model call failed/);
 });
@@ -111,6 +113,6 @@ it('hides the panel entirely when the CLI does not advertise the feature', async
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   location.hash = '#/skill/deploy-check?tab=activity';
   render(<BackendContext value={backend}><QueryClientProvider client={client}><Tooltip.Provider><PromptContext value={async () => true}><PrintContext value={() => undefined}><PublishRunProvider><App/></PublishRunProvider></PrintContext></PromptContext></Tooltip.Provider></QueryClientProvider></BackendContext>);
-  await screen.findByRole('region', { name: 'Activity' });
-  expect(screen.queryByText(/Miss screening/)).toBeNull();
+  await screen.findByText('Active days');
+  expect(screen.queryByRole('region', { name: 'Misfires' })).toBeNull();
 });

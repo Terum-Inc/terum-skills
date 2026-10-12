@@ -1,1 +1,8 @@
 .analytics-row{display:flex;gap:12px;padding:16px 20px 0;flex-shrink:0}.stat-tile{display:flex;flex-direction:column;gap:6px;flex-basis:0;min-width:0;min-height:118px;padding:14px 16px;border-radius:8px;background:var(--tk-bg2);border:1px solid var(--tk-border1);box-sizing:border-box}.stat-label{font-size:12px;font-weight:500;color:var(--tk-text3)}.stat-value{font-size:22px;font-weight:590;color:var(--tk-text1);line-height:1.1;letter-spacing:-.01em}.analytics-meter{display:flex;gap:2px;width:100%}.analytics-meter>span{flex-basis:0;height:6px;border-radius:3px}.analytics-divider{display:flex;align-items:center;height:24px;padding:0 20px;margin-top:4px;flex-shrink:0;box-sizing:border-box}.analytics-divider>div{flex-grow:1;height:1px;background:var(--tk-border1)}
+/* A tile that opens its own detail (the Activation tile, 2026-09-27): the same box, pressable. */
+.stat-tile-button{font:inherit;color:inherit;text-align:left;cursor:pointer;transition:background-color .12s,border-color .12s}
+.stat-tile-button:hover{background:var(--tk-bg3);border-color:var(--tk-border2)}
+.stat-tile-button:focus-visible{outline:2px solid var(--tk-accent);outline-offset:2px}
+.stat-tile-button .stat-label{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.stat-tile-button .stat-open{display:flex;color:var(--tk-text4);flex-shrink:0}
+.stat-tile-button:hover .stat-open{color:var(--tk-text1)}

@@ -1,5 +1,5 @@
 import type { FileDropEvent, SkillFileResult, SkillToggleResult } from './types';
-import type { AppUpdateStaged, AppUpdateStatus, LaunchContext, IdentityArgs, IdentityWrite, Settings, Onboarding, Features, Capabilities, Surfaces, ReadOptions, Catalog, ChangeSource, DeriveBriefArgs, DerivedBrief, EvalArgs, EvalManyArgs, EvalManyResult, EvalResult, UsageModel, MissesModel, EvalReportModel, InboxItem, InstallArgs, InstalledResult, InviteArgs, InviteResult, MachineUninstallResult, PrefStore, PublishArgs, PublishResult, UnpublishArgs, UnpublishResult, Receipt, ReconcileResult, Result, Roster, Run, LibraryScope, ProjectAdded, ProjectRemoved, ProjectRenamed, ProjectCreated, SearchArgs, SearchHit, SetupArgs, SetupResult, Library, SkillDetail, StatusResult, Subscription, SyncArgs, SyncResult, TeamArgs, TeamResult, UninstallArgs, UninstalledResult, UpdateAdvice, ValidateArgs, ValidateResult } from './types';
+import type { AppUpdateStaged, AppUpdateStatus, LaunchContext, IdentityArgs, IdentityWrite, Settings, Onboarding, Features, Capabilities, Surfaces, ReadOptions, Catalog, ChangeSource, DeriveBriefArgs, DerivedBrief, EvalArgs, EvalManyArgs, EvalManyResult, EvalResult, UsageReport, MissesModel, EvalReportModel, InboxItem, InstallArgs, InstalledResult, InviteArgs, InviteResult, MachineUninstallResult, PrefStore, PublishArgs, PublishResult, UnpublishArgs, UnpublishResult, Receipt, ReconcileResult, Result, Roster, Run, LibraryScope, ProjectAdded, ProjectRemoved, ProjectRenamed, ProjectCreated, SearchArgs, SearchHit, SetupArgs, SetupResult, Library, SkillDetail, StatusResult, Subscription, SyncArgs, SyncResult, TeamArgs, TeamResult, UninstallArgs, UninstalledResult, UpdateAdvice, ValidateArgs, ValidateResult } from './types';
 export interface Backend {
   setWindowBackground(color: string): Promise<Result<void>>;
   quit(): Promise<void>;
@@ -42,9 +42,14 @@ export interface Backend {
    *  Omitted keeps the machine-wide answer a deep link, a bookmark or the marketplace needs. */
   skill(q: { ref: string; team?: string; at?: LibraryScope }, options?: ReadOptions): Promise<Result<SkillDetail>>;
   evalReport(q: { ref: string; team?: string }, options?: ReadOptions): Promise<Result<EvalReportModel>>;
-  /** Live firing counts for one skill. Read-only over the team repo; the CLI's own archive append is
-   *  machine-local (see SERVE_READ_VERBS). Gated on `features.usage`. */
-  usage(q: { ref: string }, options?: ReadOptions): Promise<Result<UsageModel>>;
+  /** The whole machine's live firing counts in one window (`usage --json`, no ref). Read-only over
+   *  the team repo; the CLI's own archive append is machine-local (see SERVE_READ_VERBS). Gated on
+   *  `features.usage`. Callers project it: `skillUsage` for one skill page, `activationOverview`
+   *  for a Library root (lib/activation.ts). It is one read on purpose — `usage <skill>` costs the
+   *  same corpus scan, so per-skill calls would rescan per page. `days` is a window the picker
+   *  offers (USAGE_WINDOWS) or the longer span behind it (`historyDays`): a window's days before it
+   *  opened, and a skill page's year. */
+  usage(q?: { days?: number }, options?: ReadOptions): Promise<Result<UsageReport>>;
   /** Screen real prompts for skills that looked applicable and never fired. Gated on `features.misses`.
    *
    *  Returns a `Run`, not a `Promise<Result>`, and the difference is the point: this SPENDS MODEL

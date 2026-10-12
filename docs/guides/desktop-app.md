@@ -83,7 +83,13 @@ Two habits are worth knowing. Almost everything is right-clickable: a skill card
 
 The Library is one board per root: Global (`~/.claude/skills`) and one for each project you registered with `project add`. The sidebar lists them under Library ▸ Projects, with a project registered inside another drawn under it, one indent deeper. Both are read with `ls --local`.
 
-The header names the root and its path, and for a project it names the GitHub slug or says `GitHub: not connected`. Under it are the overview tiles (Skills, Evaluated, Unpublished, Needs attention), then the search and sort row, then the cards.
+The header names the root and its path, and for a project it names the GitHub slug or says `GitHub: not connected`. Under it are the overview tiles (Skills, Evaluated, Activation, Needs attention), then the search and sort row, then the cards.
+
+The Skills tile carries the root's publish state as one caption line, in the word the cards use: `3 unpublished`, with `· 1 with an unknown publish state` appended when the CLI could not tell, `All published to the marketplace` when nothing is left unknown, and nothing at all when nothing is known.
+
+The Activation tile is the Library's view of [`usage`](../evaluating/usage.md): how many of this root's skills fired on this machine in the window, as `4 of 15`, over a three-segment meter and its caption, `3 chosen by the model · 1 by name only · 11 never fired`. Chosen means the model picked the skill from its description at least once; by name only means it fired only because a person named it, which is the finding `usage` exists for; never fired is everything else on the board. Under that is the window and any hedge the counts need (`last 30 days · 1 placed mid-window`). The tile reads `usage --json` itself, once for the whole machine and shared with every skill page, so a slow transcript scan never holds the cards back: it draws a skeleton while the scan runs, a dash with the CLI's error if the scan fails, and a dash with `This terum-skills version cannot report skill firings.` when the CLI predates the verb. An empty library reads `Nothing fired yet`. The manual that setup places is left out of the count.
+
+Clicking the Activation tile opens the **Activation** popup, a link in the URL as `?dialog=activation`. It holds three rows on one date axis (the running total of fires beside the window before, misfires from the latest miss screening, and how many skills have gone a full window without firing), then one row per skill with its firings by day, who started them, its misfires, when it last fired and its eval verdict, then **Worth a look**: what stands out, in counts, such as a skill that only fires when named or one that passes its evals and never fires. Its picker sets the window for the tile too, 30 days, 90 days or 1 year, in the URL as `?window=`. The longer windows reach into this machine's `usage` archive. Misfires come only from a screening a person starts; nothing spends a model call on its own.
 
 Each card carries the skill's project and category, its name, description, version line, size, any install count, and its flags. A card for a folder on this machine also carries the per-machine switch: it runs `skill enable` or `skill disable`, which writes Claude Code's own `skillOverrides` setting. See [Claude Code integration](claude-code-integration.md).
 
@@ -115,7 +121,7 @@ The page ships four tabs.
 | SKILL.md | The frontmatter and the rendered body, with the file list and Open in editor |
 | Evals | The receipt for this version, the history of runs beside it, and Run eval |
 | Quality | Not shipped. The tab draws a coming-soon panel |
-| Activity | Live firing counts for this skill, from `usage` |
+| Activity | Live firings for this skill, from `usage`: four figures for the window (firings, active days, longest streak, last fired), one note when the firings raise one (never chosen from its description, placed and never fired), the last year as a contributions-style calendar with the window bracketed under it, what happened since placement, and the prompts a miss screening found it should have caught. The window picker (30 days, 90 days, 1 year) lives in the URL as `?window=` |
 
 The SKILL.md tab's caption ends with `read from …`, and that is where the bytes on screen came from: the path of the copy on this machine when the skill is placed here, and `the team repo clone · <slug>` when it is not. It tells you whether you are reading your own folder or the team's published version.
 

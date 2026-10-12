@@ -1,0 +1,39 @@
+/* The Activity tab's activation section (2026-09-27), beside skill.css because it needs a media
+   query and skill.css is read flat by scroll-panes.test.ts: four figures, the note, a year of days, then
+   what happened since placement beside the prompts it should have caught. The tab box itself
+   (skill.css) spans the whole panel, so the year can be a year. */
+.activity-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border:1px solid var(--tk-border1);border-radius:8px;flex-shrink:0}
+.activity-stat{display:flex;flex-direction:column;gap:8px;min-width:0;padding:14px 16px}
+.activity-stat+.activity-stat{border-left:1px solid var(--tk-border1)}
+.activity-stat>span:first-child{font-size:12px;font-weight:500;color:var(--tk-text3)}
+.activity-stat-value{display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;font-size:22px;font-weight:590;line-height:1.15;color:var(--tk-text1);font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.activity-stat-value small{font-size:13px;font-weight:500;color:var(--tk-text3);letter-spacing:0}
+.activity-stat .board-small{line-height:16px}
+.activity-delta{align-self:center;height:18px;padding:0 6px;border-radius:4px;font-size:11px;font-weight:590;line-height:18px;letter-spacing:0;color:var(--tk-text3);background:var(--tk-bg3)}
+.activity-delta[data-trend="up"]{color:var(--tk-good);background:color-mix(in srgb,var(--tk-good) 14%,transparent)}
+.activity-delta[data-trend="down"]{color:var(--tk-bad);background:color-mix(in srgb,var(--tk-bad) 14%,transparent)}
+.activity-meter{display:flex;gap:2px;height:4px}
+.activity-meter>span{flex-basis:0;min-width:2px;border-radius:2px}
+.activity-note{display:grid;grid-template-columns:22px minmax(0,1fr);gap:12px;padding:12px 14px;border-radius:8px;border:1px solid var(--tk-border1);background:var(--tk-bg2);flex-shrink:0}
+.activity-note[data-tone="bad"]{--tone:var(--tk-bad)}.activity-note[data-tone="warn"]{--tone:var(--tk-warn)}.activity-note[data-tone="quiet"]{--tone:var(--tk-text3)}.activity-note[data-tone="good"]{--tone:var(--tk-good)}
+.activity-note>i{width:22px;height:22px;border-radius:6px;display:grid;place-items:center;background:color-mix(in srgb,var(--tone) 15%,transparent)}
+.activity-note>i::after{content:"";width:7px;height:7px;border-radius:50%;background:var(--tone)}
+.activity-note b{display:block;font-size:13px;font-weight:510;line-height:20px;color:var(--tk-text1)}
+.activity-note span{display:block;font-size:12px;line-height:18px;color:var(--tk-text3);max-width:720px;text-wrap:pretty}
+.activity-block{display:flex;flex-direction:column;gap:10px;min-width:0;flex-shrink:0}
+.activity-pair{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.55fr);gap:36px;flex-shrink:0}
+.activity-list{display:flex;flex-direction:column;border-top:1px solid var(--tk-border1)}
+.activity-list>div{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 12px;padding:10px 0;border-bottom:1px solid var(--tk-border1)}
+.activity-list>div>span:nth-child(1){font-size:13px;color:var(--tk-text2)}
+.activity-list>div>span:nth-child(2){font-size:13px;color:var(--tk-text1);text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.activity-list>div>span:nth-child(3){grid-column:1/-1;font-size:12px;line-height:16px;color:var(--tk-text3);text-wrap:pretty}
+.activity-misfire{display:grid;grid-template-columns:52px minmax(0,1fr) auto;gap:12px;align-items:baseline;padding:10px 0;border-bottom:1px solid var(--tk-border1)}
+.activity-misfire>span:first-child{font-size:12px;color:var(--tk-text3);font-variant-numeric:tabular-nums;white-space:nowrap}
+.activity-misfire>span:nth-child(2){font-size:13px;line-height:19px;color:var(--tk-text1);text-wrap:pretty;overflow-wrap:anywhere}
+.activity-misfires-foot{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;padding-top:10px}
+.activity-misfires-foot>div{display:flex;flex-direction:column;gap:2px;min-width:0;max-width:560px}
+.activity-misfires-foot .board-small{line-height:16px}
+.activity-caveats{display:flex;flex-direction:column;gap:2px;flex-shrink:0}
+.activity-caveats .board-small{line-height:16px}
+@media (max-width:900px){.activity-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.activity-stat:nth-child(3){border-left:0}.activity-stat:nth-child(n+3){border-top:1px solid var(--tk-border1)}.activity-pair{grid-template-columns:minmax(0,1fr);gap:24px}}
+.activity-misfire-list{display:flex;flex-direction:column;border-top:1px solid var(--tk-border1)}

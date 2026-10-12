@@ -73,12 +73,36 @@ export type SkillDetail=Omit<Design['DETAIL'],keyof SkillCard|'root'|'history'|'
  viewerHandle:string|null;
  localRuns:{runId:string;runDir:string;executionStatus:'complete'|'partial'|'failed'|'unknown';committed:boolean;receipt:Receipt|null;summary:ReceiptSummary|null}[];
 };
-/** One skill's live firing counts (build spec §4.2), read from the CLI's `usage` verb.
+/** One row of the CLI's whole-machine `usage` report (build spec §5): a skill this machine has
+ *  PLACED, zero-filled when it never fired. `d1` is the model choosing it from its description,
+ *  `d2` a person naming it; `autonomy` is d1/(d1+d2), null over nothing; `availability` says how
+ *  much of the window the placement covered. */
+export interface UsageRow{skill:string;label:string;d1:number;d2:number;autonomy:number|null;availability:'full'|'partial'|'unknown';/** The ledger's placement date; null when it records none, or on a CLI that predates the field. */placedAt:string|null}
+/** One (local day, skill) bucket with at least one firing — the CLI's `daily` row, the same tally
+ *  as `rows` cut by the machine's own calendar day. A calendar is drawn from these; never a rate. */
+export interface UsageDay{day:string;skill:string;d1:number;d2:number}
+/** The windows the app offers, in days. 30 is the CLI's own default (no flag, so the read is the
+ *  one it has always made); longer ones pass `--since` and reach into the machine's archive, which
+ *  only holds what earlier runs on this machine scanned — the CLI's caveat says so every time.
+ *  Each window also reads a longer span behind it (lib/activation.ts `historyDays`) for the days
+ *  before it opened, so `Backend.usage` takes any day count, not only these. */
+export const USAGE_WINDOWS=[30,90,365] as const;
+export type UsageWindow=typeof USAGE_WINDOWS[number];
+/** The whole machine's firings in one window, read ONCE (`usage --json`, no ref) and projected
+ *  client-side: `usage <skill>` costs the same corpus scan as an unfiltered read, so one read serves
+ *  the Library's Activation tile and every skill page. `rows` is the placement ledger; `unused` is
+ *  how many of those never fired; `unrecognised` is names that fired with no placement here (a
+ *  hand-placed folder). The two are never folded together — the CLI keeps them apart for the same
+ *  reason (lib/activation.ts). `caveats` are the CLI's own and print every time. */
+export interface UsageReport{since:string;until:string;rows:UsageRow[];unused:number;unrecognised:{skill:string;d1:number;d2:number}[];caveats:string[];/** Null on a CLI that predates per-day buckets: the counts still draw, the calendar and the timeline say why they cannot. */daily:UsageDay[]|null}
+/** One skill's live firing counts (build spec §4.2), projected from `UsageReport` by
+ *  `skillUsage` (lib/activation.ts).
  *
- *  `firings:null` means this machine has no PLACEMENT for the skill — it was never installed here,
- *  so it was never in a position to be passed over. That is not the same as `{d1:0,d2:0}`, which
- *  means it was installed and the model ignored it anyway. The second is the case this whole
- *  feature exists to find; a panel that renders both as "no firings" throws it away. */
+ *  `firings:null` means nothing was observed AND the ledger has no row — this reads transcripts,
+ *  not the filesystem, so it is not a claim that the skill is uninstalled. That is not the same as
+ *  `{d1:0,d2:0}`, which means it was placed and the model ignored it anyway. The second is the
+ *  case this whole feature exists to find; a panel that renders both as "no firings" throws it
+ *  away. `placed:false` is the third answer: it fired from a copy Terum did not place. */
 export interface UsageModel{firings:{d1:number;d2:number;autonomy:number|null;availability:'full'|'partial'|'unknown';placed:boolean}|null;since:string;until:string;caveats:string[]}
 /** One skill's miss-screening result, from the CLI's `misses` verb.
  *
@@ -115,13 +139,15 @@ export interface ProjectCreated {team:string;name:string;remotes:string[];skills
 export interface ProjectRemoved {path:string;placementsRemaining:number;/** Registered folders inside the forgotten one: they stay, drawn one level up. */subProjectsRemaining?:number|undefined}
 /** `project rename`: display text only — the folder keeps its name, and no team file changes. */
 export interface ProjectRenamed {path:string;label:string;previous:string}
-/** The Library overview row's fourth tile counts skills never published to the team marketplace. It
- *  stands where the design board draws Team installs, so the two extra strings are declared here
- *  rather than in `src/fixtures/design.json`, which invariant 3 forbids hand-editing (`installs` /
- *  `installs_note` / `zero.installs` therefore stay in the generated shape, now unread by the row).
- *  `unpublished` is '—' when the driving CLI is too old to report publish state — an unknown, never
- *  a zero. */
-export type LibraryOverview=Design['LIBRARY_OVERVIEW'] & {unpublished:string;unpublished_note:string;zero:Design['LIBRARY_OVERVIEW']['zero'] & {unpublished:string}};
+/** The Library overview row's fourth tile is Activation: how many of this root's skills fired on
+ *  this machine, read live from `Backend.usage()` by the row itself (components/domain/Analytics.tsx)
+ *  rather than carried here, so a slow transcript scan never holds the cards back. It stands where
+ *  the design board draws Team installs (`installs` / `installs_note` / `zero.installs` stay in the
+ *  generated shape, unread by the row, since invariant 3 forbids hand-editing design.json). The
+ *  publish-state count that tile carried until 2026-09-21 is now one caption under the Skills tile:
+ *  `unpublished_line` (lib/overview-counts.ts), '' when nothing is known or nothing needs saying.
+ *  `zero.activation` is the tile's empty-library caption, app copy like the others in `zero`. */
+export type LibraryOverview=Design['LIBRARY_OVERVIEW'] & {unpublished_line:string;zero:Design['LIBRARY_OVERVIEW']['zero'] & {activation:string}};
 export interface Library {roots:Root[];scanned:string[]|null;skills:SkillCard[];overview:LibraryOverview;title:string;root:Root;problems?:readonly {source:string;message:string}[]}
 /** attention = failingEvals + updatesAvailable + notEvaluated; counts.Alerts = attention, counts.Updates = updatesAvailable. Absent CLI counters are omitted. */
 export type CloneState = {state:'absent'} | {state:'incomplete';reason:'not-a-repository'|'no-team-json'|'unverifiable';error?:string} | {state:'foreign'|'ok';origin:string};

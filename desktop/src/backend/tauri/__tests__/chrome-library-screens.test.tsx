@@ -35,8 +35,8 @@ it('draws no scan-coverage row, a count-based search label, no empty anchor and 
 it('renders the four zero captions for an empty recording (L7)',async()=>{
  open({local:value=>{const global=value.local[0]!;global.rows=[];global.counts={skillFolders:0,connectable:0};}});
  await screen.findByText('No skills in your global library');
- // `installs` is no longer one of the four: the Unpublished tile stands where Team installs did.
- for(const caption of [overviewCopy.skills,overviewCopy.evaluated,overviewCopy.unpublished,overviewCopy.attention])expect(screen.getByText(caption)).toBeVisible();
+ // `installs` is no longer one of the four: the Activation tile stands where Team installs did.
+ for(const caption of [overviewCopy.skills,overviewCopy.evaluated,overviewCopy.activation,overviewCopy.attention])expect(screen.getByText(caption)).toBeVisible();
  expect(screen.queryByText(overviewCopy.installs)).toBeNull();
  expect(screen.queryByRole('alert')).toBeNull();
 });

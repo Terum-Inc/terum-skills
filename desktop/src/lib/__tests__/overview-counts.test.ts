@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { evaluatedOverview, unpublishedCount, unpublishedOverview } from '../overview-counts';
+import { evaluatedOverview, unpublishedCount, unpublishedLine } from '../overview-counts';
 import { overviewCopy } from '../overview-copy';
 import type { SkillCard } from '../../backend/types';
 
@@ -34,24 +34,27 @@ describe('unpublishedCount',()=>{
  // CLI cannot offer (`notOfferedCard` builds its card with no overlay key), the tile never showed a number.
  it('keeps counting what it knows and reports the unknowns beside it',()=>{
   expect(unpublishedCount([card(null,'none'),card(null,null)])).toEqual({count:1,unknown:1,total:2});
-  expect(unpublishedOverview([card(null,'none'),card(null,null)])).toEqual({unpublished:'1',unpublished_note:'never published to the marketplace · 1 folder with an unknown publish state'});
-  expect(unpublishedOverview([card(null,'none'),card(null,'none'),card(null,null),card(null,null)])).toEqual({unpublished:'2',unpublished_note:'never published to the marketplace · 2 folders with an unknown publish state'});
+  expect(unpublishedLine([card(null,'none'),card(null,null)])).toBe('1 unpublished · 1 with an unknown publish state');
+  expect(unpublishedLine([card(null,'none'),card(null,'none'),card(null,null),card(null,null)])).toBe('2 unpublished · 2 with an unknown publish state');
  });
- it('reports an unknown rather than a count only when nothing at all is known',()=>{
-  expect(unpublishedOverview([card(null,null),card(null,null)])).toEqual({unpublished:'—',unpublished_note:''});
+ // The line lives under the Skills tile now (2026-09-21), so an unknown is silence, not a dash: a dash
+ // beside "15" would read as a second, broken number.
+ it('says nothing rather than a number when nothing at all is known',()=>{
+  expect(unpublishedLine([card(null,null),card(null,null)])).toBe('');
+  expect(unpublishedLine([])).toBe('');
  });
  it('never claims everything is published while a folder is unaccounted for',()=>{
-  expect(unpublishedOverview([card(null,'identical'),card(null,null)])).toEqual({unpublished:'0',unpublished_note:'1 folder with an unknown publish state'});
+  expect(unpublishedLine([card(null,'identical'),card(null,null)])).toBe('1 with an unknown publish state');
  });
  // The bundled manual setup places can never become a team skill, so it is neither unpublished nor an
- // unknown: a library of published skills plus the manual still reads a clean 0.
+ // unknown: a library of published skills plus the manual still reads a clean sheet.
  it('leaves bundled folders out of the reckoning entirely',()=>{
   expect(unpublishedCount([card(null,'identical'),card(null,null,['bundled'])])).toEqual({count:0,unknown:0,total:1});
-  expect(unpublishedOverview([card(null,'identical'),card(null,null,['bundled'])])).toEqual({unpublished:'0',unpublished_note:''});
-  expect(unpublishedOverview([card(null,'none'),card(null,null,['bundled'])])).toEqual({unpublished:'1',unpublished_note:'never published to the marketplace'});
+  expect(unpublishedLine([card(null,'identical'),card(null,null,['bundled'])])).toBe('All published to the marketplace');
+  expect(unpublishedLine([card(null,'none'),card(null,null,['bundled'])])).toBe('1 unpublished');
  });
- it('drops the note at zero and carries it above zero',()=>{
-  expect(unpublishedOverview([card(null,'identical')])).toEqual({unpublished:'0',unpublished_note:''});
-  expect(unpublishedOverview([card(null,'none')])).toEqual({unpublished:'1',unpublished_note:'never published to the marketplace'});
+ it('earns the clean sheet only with no unknowns left, and names a count above zero',()=>{
+  expect(unpublishedLine([card(null,'identical'),card(null,'differs')])).toBe('All published to the marketplace');
+  expect(unpublishedLine([card(null,'none')])).toBe('1 unpublished');
  });
 });

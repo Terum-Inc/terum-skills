@@ -93,18 +93,19 @@ for(const {query,hidden,button,rows} of [
  });
 }
 
-// The third tile now reports Unpublished: Global has one known unpublished folder,
-// while every Terum checkout folder has an unknown publish state (overview-counts.ts).
+// The third tile is Activation (2026-09-21): the mock's whole-machine firings joined to each root's cards
+// by name (lib/activation.ts) — 4 of Global's 15 fired, 3 of the Terum checkout's 8. The publish-state
+// count it replaced rides under Skills: Global has one never-published folder, every Terum folder is unknown.
 for(const {route,title,values,note} of [
- {route:'#/library/checkout?root=%2FUsers%2Fyou%2Fcode%2Fterum',title:'8 skills',values:['8','7 of 8','—','5'],note:'6 also on Global'},
- {route:'#/library/global',title:'15 skills',values:['15','13 of 15','1','6'],note:'7 endorsed to Global'},
+ {route:'#/library/checkout?root=%2FUsers%2Fyou%2Fcode%2Fterum',title:'8 skills',values:['8','7 of 8','3 of 8','5'],note:'6 also on Global'},
+ {route:'#/library/global',title:'15 skills',values:['15','13 of 15','4 of 15','6'],note:'7 endorsed to Global'},
 ]){
  test(`${route} shows only its scoped statistics`,async({page})=>{
   const errors=await openLibrary(page,route);
   await expect(page.locator('.board-view-header').getByText(title,{exact:true})).toBeVisible();
   await expect(page.getByPlaceholder('Search '+title)).toBeVisible();
   await expect(page.locator('.analytics-row .stat-value')).toHaveText(values);
-  await expect(page.locator('.analytics-row .stat-label')).toHaveText(['Skills','Evaluated','Unpublished','Needs attention']);
+  await expect(page.locator('.analytics-row .stat-label')).toHaveText(['Skills','Evaluated','Activation','Needs attention']);
   await expect(page.locator('.analytics-row').getByText(note,{exact:true})).toBeVisible();
   expect(errors).toEqual([]);
  });

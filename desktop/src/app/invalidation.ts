@@ -5,7 +5,8 @@ const prefixes: Record<ChangeSource, readonly string[]> = {
   config: ['status', 'settings', 'onboarding', 'library', 'skill', 'catalog', 'features', 'capabilities'],
   clone: ['library', 'skill', 'catalog', 'roster', 'inbox', 'receipts', 'status'],
   marketplace: ['catalog', 'skill', 'roster', 'receipts'],
-  placed: ['library', 'skill', 'settings', 'status', 'catalog'],
+  // A placement adds or removes a `usage` row (the row set IS the ledger), so the firings read goes too.
+  placed: ['library', 'skill', 'settings', 'status', 'catalog', 'usage'],
   stamp: ['status', 'settings', 'inbox'],
 };
 

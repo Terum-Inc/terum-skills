@@ -11,14 +11,15 @@ import { affects } from './invalidation';
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
-const keys = ['status', 'settings', 'onboarding', 'library', 'skill', 'receipts', 'inbox', 'catalog', 'roster', 'update', 'capabilities', 'features', 'surfaces'];
+const keys = ['status', 'settings', 'onboarding', 'library', 'skill', 'receipts', 'inbox', 'catalog', 'roster', 'update', 'capabilities', 'features', 'surfaces', 'usage'];
 const cases: [ChangeSource, string[]][] = [
   ['config', ['status', 'settings', 'onboarding', 'library', 'skill', 'catalog', 'features', 'capabilities']],
   ['clone', ['library', 'skill', 'catalog', 'roster', 'inbox', 'receipts', 'status']],
   // A fetch-only sync cannot touch local files, so 'library' is deliberately absent; it can bring in a
   // teammate's people file and receipts, so 'roster' and 'receipts' are deliberately present.
   ['marketplace', ['catalog', 'skill', 'roster', 'receipts']],
-  ['placed', ['library', 'skill', 'settings', 'status', 'catalog']],
+  // The `usage` row set is the placements ledger, so a placement re-reads the firings too.
+  ['placed', ['library', 'skill', 'settings', 'status', 'catalog', 'usage']],
   ['stamp', ['status', 'settings', 'inbox']],
 ];
 it.each(cases)('invalidates exactly the read-model prefixes affected by %s', (source, expected) => {
