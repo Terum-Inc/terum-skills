@@ -2038,6 +2038,12 @@ export const invocationLiteralCatalog: readonly { file: string; line: number; po
     "pattern": "What stands in for a certificate is the build-provenance attestation the desktop job records. The CLI discards any asset that carries no valid attestation for this repository, and says so. Releases cut before that step landed carry none, so a CLI built from this tree refuses their assets; `app` only ever downloads the app for its own version, so that reaches a user only through `app-update --release <version>` aimed at an older Release."
   },
   {
+    "file": "docs/contributing/release.md",
+    "line": 154,
+    "policy": "prose",
+    "pattern": "`.github/workflows/release-announcement.yml` runs when a `Release` run completes successfully, and announces the release it made in two places, each from the same notes (`scripts/release-notes.mjs`): the pull requests whose merge commits lie between the previous stable tag and this one, with `feat` titles as \"New\", `fix` and untyped titles as \"Fixes and improvements\", a `type!:` title or a `BREAKING CHANGE` note as \"Breaking changes\", and docs, CI, test and other upkeep left out of the announced bullets."
+  },
+  {
     "file": "docs/evaluating/generated-evals.md",
     "line": 3,
     "policy": "prose",

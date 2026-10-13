@@ -149,6 +149,21 @@ None of them is signed with a purchased certificate. The macOS bundles use Tauri
 
 What stands in for a certificate is the build-provenance attestation the desktop job records. The CLI discards any asset that carries no valid attestation for this repository, and says so. Releases cut before that step landed carry none, so a CLI built from this tree refuses their assets; `app` only ever downloads the app for its own version, so that reaches a user only through `app-update --release <version>` aimed at an older Release.
 
+## Announcements
+
+`.github/workflows/release-announcement.yml` runs when a `Release` run completes successfully, and announces the release it made in two places, each from the same notes (`scripts/release-notes.mjs`): the pull requests whose merge commits lie between the previous stable tag and this one, with `feat` titles as "New", `fix` and untyped titles as "Fixes and improvements", a `type!:` title or a `BREAKING CHANGE` note as "Breaking changes", and docs, CI, test and other upkeep left out of the announced bullets.
+
+| Job | Script | Where it goes | Secret |
+| --- | --- | --- | --- |
+| `announce` | `scripts/release-announcement.mjs` | The team Discord channel, through a webhook, pinging @everyone | `DISCORD_WEBHOOK_URL` (channel Settings → Integrations → Webhooks) |
+| `website` | `scripts/site-changelog.mjs` | `changelog.json` on `main` of `Terum-Inc/Terum-Website`, which Vercel deploys as [terum.ai/changelog](https://www.terum.ai/changelog) | `SITE_REPO_TOKEN` (a fine-grained token with Contents read and write on that repository only) |
+
+The workflow listens for the `Release` run rather than the `release: published` event because release.yml creates the tag and the Release with `GITHUB_TOKEN`, and events made with that token start no other workflow. A dry run of release.yml tags nothing, so both scripts find no release at the dispatched commit and do nothing. A recovery run finds its release already published before the run started and does nothing either. The website job compares what it built with the file already on the site and commits nothing when they agree, so a rerun never redeploys the site.
+
+The website leads each release with one line. It is the parenthetical in the release pull request's title when there is one, for example `release: 0.16.0 (Windows setup hand-off, team move, skill fix)`, so that is where to write the summary you want people to see; without one, the first feature merged stands for the release, then the first fix, then "Behind-the-scenes improvements".
+
+To announce a release by hand, or to repeat one, run the workflow from the Actions tab with `tag` set to the release (for example `v0.23.0`). `backfill` rebuilds every release in `changelog.json` rather than just that one; use it after changing how titles are classified. Locally, both scripts take `--dry-run` to print what they would send, and `scripts/site-changelog.mjs --all --out changelog.json` writes the whole file for seeding the website repository by hand. Without `SITE_REPO_TOKEN` a local run cannot read the file already on the site, so it builds from GitHub alone.
+
 ## After a release
 
 Regenerate the changelog from the release evidence and commit it:
