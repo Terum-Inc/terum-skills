@@ -1,5 +1,5 @@
 import type { AskKind, Frame, Result, Run } from '../types';
-export interface RunContext {print(line:string):void;progress(done:number,total:number,label?:string):void;ask(kind:AskKind,question:string,opts?:{default?:string;choices?:readonly string[];detail?:readonly string[];descriptions?:readonly string[]}):Promise<string|boolean>;sleep(ms:number):Promise<void>}
+export interface RunContext {print(line:string):void;/** `item` names the skill a rung is about when one run works through several (a batched publish). */progress(done:number,total:number,label?:string,item?:string):void;ask(kind:AskKind,question:string,opts?:{default?:string;choices?:readonly string[];detail?:readonly string[];descriptions?:readonly string[]}):Promise<string|boolean>;sleep(ms:number):Promise<void>}
 export function createRun<T>(script:(ctx:RunContext)=>Promise<Result<T>>):Run<T> {
  const buffer:Frame[]=[];
  const readers=new Set<()=>void>();
@@ -20,7 +20,7 @@ export function createRun<T>(script:(ctx:RunContext)=>Promise<Result<T>>):Run<T>
  const assertActive=()=>{if(finished)throw new Error('Cancelled.');};
  const ctx:RunContext={
   print:line=>{assertActive();push({t:'print',line});},
-  progress:(done,total,label)=>{assertActive();if(!Number.isFinite(done)||!Number.isFinite(total)||done<0||total<done)throw new Error('Invalid progress.');push({t:'progress',done,total,...(label===undefined?{}:{label})});},
+  progress:(done,total,label,item)=>{assertActive();if(!Number.isFinite(done)||!Number.isFinite(total)||done<0||total<done)throw new Error('Invalid progress.');push({t:'progress',done,total,...(label===undefined?{}:{label}),...(item===undefined?{}:{item})});},
   ask:(kind,question,opts={})=>{assertActive();if(kind==='select'&&!opts.choices?.length)return Promise.reject(new Error('Select requires choices.'));const id=String(++serial);return new Promise((resolve,reject)=>{asks.set(id,{resolve,reject,kind,...(opts.choices?{choices:opts.choices}:{})});push({t:'ask',id,kind,question,...opts});});},
   sleep:ms=>{assertActive();if(!Number.isFinite(ms)||ms<0)return Promise.reject(new Error('Invalid delay.'));return new Promise((resolve,reject)=>{const stop=()=>{clearTimeout(timer);reject(new Error('Cancelled.'));};const timer=setTimeout(()=>{sleepers.delete(stop);resolve();},ms);sleepers.add(stop);});}
  };

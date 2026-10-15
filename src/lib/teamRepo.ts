@@ -61,6 +61,18 @@ export interface SafeWriteOptions extends GuardContext {
 
 export interface SafeWriteResult<R = void> { changed: boolean; pushedTo: string; returned: R; }
 
+/** One item of a batch: the mutation, and the commit message that item's own commit carries. */
+export interface BatchItem<R = void> { mutate: Mutate<R>; message: string; }
+/** `committed` and `skipped` carry the caller's index, so a caller can map an outcome back to what it asked for. */
+export interface BatchOutcome<R = void> {
+  committed: { index: number; returned: R }[];
+  /** `noop` separates "this item had nothing left to write" - the record is already what the caller
+   *  wants, which is success - from a mutation the tree refused, which is not. */
+  skipped: { index: number; reason: string; noop: boolean }[];
+  changed: boolean;
+  pushedTo: string;
+}
+
 /** Shared contract for the refresh batches; this batch does not wire or implement these options. */
 export interface RefreshOptions { lockWaitMs?: number; onWaiting?: (info: { label: string; elapsedMs: number }) => void; deadlineMs?: number }
 
@@ -68,6 +80,8 @@ export interface TeamRepo {
   readonly root: string;
   readonly remote: string;
   safeWrite<R = void>(mutate: Mutate<R>, options: SafeWriteOptions): Promise<SafeWriteResult<R>>;
+  /** One lock, one fetch, one commit per item, one push. See `safeWriteBatch`. */
+  safeWriteBatch<R = void>(items: readonly BatchItem<R>[], options: SafeWriteOptions): Promise<BatchOutcome<R>>;
 }
 
 /** The deadline passed while the remote kept moving ahead (§6.0 step 5). */
@@ -154,7 +168,11 @@ export function lockWait(io: { readonly interactive: boolean; print(line: string
 type Git = (args: readonly string[]) => Promise<CommandResult>;
 
 export function openTeamRepo(root: string, remote: string, runner: Runner = systemRunner): TeamRepo {
-  return { root, remote, safeWrite: <R = void>(mutate: Mutate<R>, options: SafeWriteOptions) => safeWrite(root, remote, runner, mutate, options) };
+  return {
+    root, remote,
+    safeWrite: <R = void>(mutate: Mutate<R>, options: SafeWriteOptions) => safeWrite(root, remote, runner, mutate, options),
+    safeWriteBatch: <R = void>(items: readonly BatchItem<R>[], options: SafeWriteOptions) => safeWriteBatch(root, remote, runner, items, options),
+  };
 }
 
 async function safeWrite<R = void>(root: string, remote: string, runner: Runner, mutate: Mutate<R>, options: SafeWriteOptions): Promise<SafeWriteResult<R>> {
@@ -323,6 +341,141 @@ async function assertOrigin(root: string, remote: string, git: Git): Promise<str
  * arbitrates (rulings walk R2, 2026-09-06). Ref-lock contention is transient and the name still
  * must not exist, so it is retried; a stale lease means the name now exists — terminal.
  */
+/**
+ * `safeWrite`'s sibling for a batch: one lock, one fetch, **one commit per item**, one push.
+ *
+ * `safeWrite` welds commit and push together, so N skills cost N fetches and N pushes — measured at
+ * 0.85 s and 1.1 s against a live remote, which is what makes a bulk install feel like waiting. This
+ * keeps the per-skill history (each item commits with its own message, so provenance is unchanged)
+ * and pays for the network once.
+ *
+ * `safeWrite` itself is deliberately not refactored into a one-element call of this function: the
+ * interactive single-skill path must be incapable of regressing from a change made here, and that
+ * duplication is the price (auto-share batching spec §2, LOCKED 2026-09-10).
+ *
+ * The behavioural difference from `safeWrite`: an item whose mutation throws is **skipped**, not
+ * fatal. One bad folder in a batch of eighty-seven must not cost the other eighty-six their upload.
+ */
+async function safeWriteBatch<R = void>(root: string, remote: string, runner: Runner, items: readonly BatchItem<R>[], options: SafeWriteOptions): Promise<BatchOutcome<R>> {
+  const git: Git = (args) => runner.run('git', args, { cwd: root });
+  const origin = await assertOrigin(root, remote, git);
+  const requireGit = async (args: readonly string[]) => {
+    const result = await git(args);
+    if (result.code !== 0) {
+      const copy = args[0] === 'fetch' ? explainGitAccessFailure(origin, result.stderr) : null;
+      throw new Error(`git ${args.join(' ')} failed: ${(result.stderr || result.stdout).trim()}${copy ? `\n${copy}` : ''}`);
+    }
+    return result;
+  };
+  const realRoot = await realpath(root);
+  const now = options.now ?? Date.now;
+  const budgetMs = options.deadlineMs ?? DEFAULT_DEADLINE_MS;
+  const created = new Set<string>();
+  let attempt = 0;
+  let lastError = 'push rejected';
+  let compromised = false;
+  let pushedToMain = false;
+  const release = await acquireCloneLock(root, { lockStale: options.lockStale, label: options.label, lockWaitMs: options.lockWaitMs, onWaiting: options.onWaiting, onCompromised: () => { compromised = true; } });
+  const deadline = now() + budgetMs;
+  let pushed = false;
+  try {
+    while (now() <= deadline) {
+      if (compromised) throw new Error(lostLock(root));
+      await requireGit(['fetch', 'origin']);
+      await requireGit(['reset', '--hard', 'origin/main']);
+      // Rebuilt on every attempt, and this is the invariant the whole function turns on: a retry
+      // re-runs every mutation against the freshly reset tree, so results kept from a previous
+      // attempt would double-count silently.
+      const committed: { index: number; returned: R }[] = [];
+      const skipped: { index: number; reason: string; noop: boolean }[] = [];
+      for (const [index, item] of items.entries()) {
+        if (compromised) throw new Error(lostLock(root));
+        const staged = (await requireGit(['ls-files', '--stage', '-z'])).stdout.split('\0').filter(Boolean);
+        const tracked = new Set<string>(); const executable = new Set<string>();
+        for (const entry of staged) {
+          const tab = entry.indexOf('\t'); const path = tab < 0 ? undefined : entry.slice(tab + 1);
+          if (path === undefined) continue;
+          tracked.add(path);
+          if (entry.startsWith('100755 ')) executable.add(path);
+        }
+        const tree = makeTree(root, tracked, executable);
+        let returned: R;
+        try {
+          returned = item.mutate(tree);
+          if (tree.changedPaths.length === 0) { skipped.push({ index, reason: 'nothing to write', noop: true }); continue; }
+          guard(tree, options);
+        } catch (error) {
+          // The item is out of this batch; the rest of the batch is unaffected. The tree it built
+          // was in memory only, so there is nothing on disk to undo before the next item.
+          skipped.push({ index, reason: error instanceof Error ? error.message : String(error), noop: false });
+          continue;
+        }
+        const changed = tree.changedPaths;
+        for (const path of changed) if (!tracked.has(path) && tree.after(path) !== undefined) created.add(path);
+        const wanted = tree.executablePaths();
+        const present = changed.filter((path) => tree.after(path) !== undefined);
+        const plus = present.filter((path) => wanted.has(path));
+        const minus = present.filter((path) => !wanted.has(path) && executable.has(path));
+        await applyTree(root, realRoot, tree, changed);
+        await requireGit(['add', '-A', '--', ...changed]);
+        if (plus.length) await requireGit(['update-index', '--chmod=+x', '--', ...plus]);
+        if (minus.length) await requireGit(['update-index', '--chmod=-x', '--', ...minus]);
+        const stagedNow = (await requireGit(['diff', '--cached', '--name-only', '--no-renames', '-z'])).stdout.split('\0').filter(Boolean).sort();
+        if (JSON.stringify(stagedNow) !== JSON.stringify([...changed].sort())) {
+          throw new GuardError(`Staged diff [${stagedNow.join(', ')}] does not match the mutation [${changed.join(', ')}]`);
+        }
+        await requireGit(['commit', '-q', '-m', item.message]);
+        committed.push({ index, returned });
+      }
+      if (committed.length === 0) return { committed, skipped, changed: false, pushedTo: 'main' };
+      // Once, after the last item — not per item: the generator derives every skill's latest version
+      // from the post-image, so one regeneration describes the whole batch.
+      if (!isGitHubRemote(remote)) {
+        const readmeStaged = (await requireGit(['ls-files', '--stage', '-z'])).stdout.split('\0').filter(Boolean);
+        const tracked = new Set<string>(); const executable = new Set<string>();
+        for (const entry of readmeStaged) {
+          const tab = entry.indexOf('\t'); const path = tab < 0 ? undefined : entry.slice(tab + 1);
+          if (path === undefined) continue;
+          tracked.add(path);
+          if (entry.startsWith('100755 ')) executable.add(path);
+        }
+        const tree = makeTree(root, tracked, executable);
+        const refusal = await regenerateReadmeInTree(tree, remote);
+        if (refusal !== undefined) options.onReadmeRefusal?.(refusal);
+        const changed = tree.changedPaths.filter((path) => path === 'README.md');
+        if (changed.length) {
+          for (const path of changed) if (!tracked.has(path) && tree.after(path) !== undefined) created.add(path);
+          await applyTree(root, realRoot, tree, changed);
+          await requireGit(['add', '-A', '--', ...changed]);
+          await requireGit(['commit', '-q', '-m', options.message ?? `${options.handle}: ${options.action}`]);
+        }
+      }
+      if (compromised) throw new Error(lostLock(root));
+      pushed = true;
+      const outcome = await push(git);
+      if (outcome.ok) { pushedToMain = outcome.pushedTo === 'main'; return { committed, skipped, changed: true, pushedTo: outcome.pushedTo }; }
+      if (!outcome.retryable) {
+        const copy = explainGitAccessFailure(origin, outcome.error);
+        throw new PushRefused(`The remote refused the push: ${outcome.error.trim()}${copy ? `\n${copy}` : ''}`);
+      }
+      lastError = outcome.error;
+      if (now() >= deadline) break;
+      await (options.sleep ?? wait)((options.backoff ?? defaultBackoff)(attempt++));
+    }
+    if (!pushed) throw new SafeWriteExhausted(`safeWriteBatch ran out of its ${budgetMs} ms budget before it could attempt a push; nothing was committed or pushed.`);
+    throw new SafeWriteExhausted(`safeWriteBatch deadline exhausted after ${attempt + 1} attempt(s); the remote kept moving ahead: ${lastError.trim()}`);
+  } finally {
+    if (!compromised && !pushedToMain) {
+      try {
+        await git(['fetch', 'origin']);
+        await git(['reset', '--hard', 'origin/main']);
+        for (const path of created) await removeCreated(root, realRoot, path);
+      } catch { /* cleanup is best effort: the next write fetches and hard-resets anyway */ }
+    }
+    await release();
+  }
+}
+
 async function push(git: Git): Promise<{ ok: true; pushedTo: string } | { ok: false; retryable: boolean; error: string }> {
   // Main only (§4.1). The PR-policy branch arm went with `policy.publish`: publish appends an
   // immutable version folder, so there is nothing for a reviewer to hold open and no branch to lease.

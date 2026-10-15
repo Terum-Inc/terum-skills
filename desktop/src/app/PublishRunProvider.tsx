@@ -12,7 +12,7 @@ import { PublishRunContext, type PublishRow, type PublishRunApi, type PublishRun
 export function PublishRunProvider({ children }: PropsWithChildren) {
  const backend = useBackend(), ask = useContext(PromptContext), print = useContext(PrintContext), client = useQueryClient();
  const [current, setCurrent] = useState<PublishRunState | null>(null), [dialogOpen, setDialogOpen] = useState(false);
- const live = useRef<PublishRunState | null>(null), settler = useRef<((final: PublishRunState) => void) | null>(null), listeners = useRef(new Set<(final: PublishRunState) => void>()), inFlight = useRef(false), stopRequested = useRef(false), abandoned = useRef(false), activeRun = useRef<Run<PublishResult> | null>(null), landed = useRef(0);
+ const live = useRef<PublishRunState | null>(null), settler = useRef<((final: PublishRunState) => void) | null>(null), listeners = useRef(new Set<(final: PublishRunState) => void>()), inFlight = useRef(false), stopRequested = useRef(false), abandoned = useRef(false), activeRun = useRef<Run<PublishResult | PublishResult[]> | null>(null), landed = useRef(0);
  function update(next: PublishRunState | null) { live.current = next; setCurrent(next); }
  /** Resolves the `settled` promise handed out by `start` with the final snapshot; called once per run, on every way out. */
  // Exactly one delivery per subscriber: a snapshot, so a listener that subscribes during the fan-out is served by
@@ -37,47 +37,64 @@ export function PublishRunProvider({ children }: PropsWithChildren) {
   const ready = rows.filter(row => row.state.kind === 'ready');
   let published = 0, failed = 0;
   setRows(rows.map(row => row.state.kind === 'ready' ? { ...row, state: { kind: 'queued' } } : row));
-  for (const row of ready) {
-   if (stopRequested.current) { setRow(row.key, { kind: 'not-started' }); continue; }
-   setRow(row.key, { kind: 'publishing', label: null });
-   let result: Result<PublishResult>, run: Run<PublishResult> | null = null;
+  if (ready.length) {
+   // ONE process for the whole selection (CLI `publish <ref...>`): one refresh, one answer per
+   // question, one push. A selection of one keeps the single-skill verb, whose separate profile
+   // write and separate failure reporting are deliberate and do not need a batch.
+   const refs = ready.map(row => localRef(row.card));
+   const byRef = new Map(ready.map((row, index) => [refs[index]!, row]));
+   // Every ready row is in flight at once, because the run is one push for all of them. Leaving the
+   // rest 'Queued' would be the sequential queue's story told about a batch that has no queue.
+   setRows((live.current?.rows ?? rows).map(row => row.state.kind === 'queued' ? { ...row, state: { kind: 'publishing', label: null } } : row));
+   let result: Result<PublishResult[]>;
+   let run: Run<PublishResult | PublishResult[]> | null = null;
    try {
-    run = backend.publish({ ref: localRef(row.card), ...flags, ...(team === undefined ? {} : { team }) });
+    run = refs.length === 1
+     ? backend.publish({ ref: refs[0]!, ...flags, ...(team === undefined ? {} : { team }) })
+     : backend.publishMany({ refs, ...flags, ...(team === undefined ? {} : { team }) });
     activeRun.current = run;
     // A force-abandoned run (D2) is one the app stopped waiting for: a question it asks afterwards is withdrawn, not shown.
     const started = run;
     const askUnlessAbandoned: typeof ask = (question, options) => abandoned.current || activeRun.current !== started ? Promise.reject(new PromptCancelledError('The app stopped waiting for this publish.')) : ask(question, options);
-    result = await driveRun(run, {}, askUnlessAbandoned, print, frame => {
-    if (!abandoned.current && activeRun.current === run) {
-     setRow(row.key, { kind: 'publishing', label: frame.label ?? null });
+    const outcome = await driveRun<PublishResult | PublishResult[]>(run, {}, askUnlessAbandoned, print, frame => {
+     if (abandoned.current || activeRun.current !== started) return;
+     // `item` is the CLI saying which skill this rung is about. Without it there is no honest way to
+     // light one row - inferring by order is wrong the moment an item is skipped - so a rung that
+     // names nobody moves the board's progress and leaves the rows alone.
+     const row = frame.item === undefined ? undefined : byRef.get(frame.item);
+     if (row) setRow(row.key, { kind: 'publishing', label: frame.label ?? null });
      const active = live.current;
      if (active) update({ ...active, progress: frame });
-    }
     });
+    // One shape from here down: the single-skill verb answers with one result, the batched one with
+    // an array, and a row maps to its outcome by index either way.
+    if (outcome.ok) result = { ok: true, value: Array.isArray(outcome.value) ? outcome.value : [outcome.value] };
+    else { const { value, ...rest } = outcome; result = value === undefined ? rest : { ...rest, value: Array.isArray(value) ? value : [value] }; }
    } catch (error) {
     result = { ok: false, error: error instanceof Error ? error.message : 'Publish failed.' };
    }
    if (abandoned.current || activeRun.current !== run) return;
    activeRun.current = null;
-   if (!result.ok) {
-    if (result.value !== undefined) {
-     // The verb finished before cancellation landed: the version is on disk, so preserve its outcome and stop.
-     published += 1; landed.current = published;
-     setRow(row.key, { kind: 'done', text: `${publishOutcomeText(row.card.name, result.value)} ${result.error}` });
-     stopRequested.current = true;
-     continue;
+   if (!result.ok && result.value === undefined) {
+    // The run itself failed or was cancelled: one push means one verdict for every row in it.
+    const cancelled = result.cancelled || (stopRequested.current && result.error === 'Cancelled.');
+    if (cancelled) stopRequested.current = true; else failed = ready.length;
+    for (const row of ready) setRow(row.key, cancelled ? { kind: 'cancelled' } : { kind: 'failed', error: result.error });
+   } else {
+    // A cancellation that lost the race still carries the outcome: the versions are in the repo.
+    if (!result.ok) stopRequested.current = true;
+    const outcomes = result.value ?? [];
+    for (const [index, row] of ready.entries()) {
+     const outcome = outcomes[index];
+     if (outcome === undefined) { failed += 1; setRow(row.key, { kind: 'failed', error: result.ok ? 'terum-skills reported no outcome for this skill.' : result.error }); continue; }
+     // A batch refuses one skill without costing the others theirs; `refused` is why, from the CLI.
+     if (outcome.refused) { failed += 1; setRow(row.key, { kind: 'failed', error: outcome.refused }); continue; }
+     published += 1;
+     const text = publishOutcomeText(row.card.name, outcome);
+     setRow(row.key, { kind: 'done', text: result.ok ? text : `${text} ${result.error}` });
     }
-    if (result.cancelled || (stopRequested.current && result.error === 'Cancelled.')) {
-     setRow(row.key, { kind: 'cancelled' });
-     stopRequested.current = true;
-     continue;
-    }
-    failed += 1;
-    setRow(row.key, { kind: 'failed', error: result.error });
-    continue;
+    landed.current = published;
    }
-   published += 1; landed.current = published;
-   setRow(row.key, { kind: 'done', text: publishOutcomeText(row.card.name, result.value) });
   }
   if (abandoned.current) return;
   inFlight.current = false;

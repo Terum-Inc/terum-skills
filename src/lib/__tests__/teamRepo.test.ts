@@ -751,3 +751,60 @@ describe('W-02 post-push cleanup',()=>{
     else {expect(calls.at(-1)?.[0]==='reset'||calls.some((c,i)=>i>push&&c.join(' ')==='reset --hard origin/main')).toBe(true);expect(await exists(join(clone,'people/me.json'))).toBe(false);if(mode==='guard')expect(await exists(join(clone,'people/other.json'))).toBe(false);}
   });
 });
+
+describe('safeWriteBatch', () => {
+  const bio = (text: string) => `${JSON.stringify({ ...person('me'), bio: text })}\n`;
+  const countingRunner = (counts: { push: number; fetch: number }) => wrapRunner(systemRunner, async (command, args, _options, next) => {
+    if (command === 'git' && args[0] === 'push') counts.push += 1;
+    if (command === 'git' && args[0] === 'fetch') counts.fetch += 1;
+    return next();
+  });
+
+  it('commits once per item and pushes once', async () => {
+    const fixture = await bareTeam();
+    const clone = await cloneWithIdentity(fixture.bare, join(fixture.root, 'clone'));
+    const counts = { push: 0, fetch: 0 };
+    const items = ['one', 'two', 'three'].map((text) => ({ mutate: (tree: { set(path: string, content: string): void }) => { tree.set('people/me.json', bio(text)); return text; }, message: `me: install ${text}` }));
+    const outcome = await openTeamRepo(clone, fixture.bare, countingRunner(counts)).safeWriteBatch(items, { action: 'install', handle: 'me' });
+    expect(outcome.changed).toBe(true);
+    expect(outcome.committed.map((entry) => entry.returned)).toEqual(['one', 'two', 'three']);
+    expect(outcome.skipped).toEqual([]);
+    // The whole point: per-skill provenance survives, and the network is paid for once.
+    const log = (await git(['log', '--format=%s', 'origin/main'], clone)).split('\n').filter(Boolean);
+    // One commit per item, in order, plus the single README regeneration this generic remote earns
+    // — regenerated once after the last item, never per item.
+    expect(log.slice(0, 4)).toEqual(['me: install', 'me: install three', 'me: install two', 'me: install one']);
+    expect(counts.push).toBe(1);
+    expect(JSON.parse(await readFile(join(clone, 'people/me.json'), 'utf8')).bio).toBe('three');
+  });
+
+  it('skips an item whose mutation throws and lands the rest', async () => {
+    const fixture = await bareTeam();
+    const clone = await cloneWithIdentity(fixture.bare, join(fixture.root, 'clone'));
+    const counts = { push: 0, fetch: 0 };
+    const items = [
+      { mutate: (tree: { set(path: string, content: string): void }) => { tree.set('people/me.json', bio('first')); return 'first'; }, message: 'me: install first' },
+      { mutate: () => { throw new Error('no SKILL.md'); }, message: 'me: install broken' },
+      { mutate: (tree: { set(path: string, content: string): void }) => { tree.set('people/me.json', bio('third')); return 'third'; }, message: 'me: install third' },
+    ];
+    const outcome = await openTeamRepo(clone, fixture.bare, countingRunner(counts)).safeWriteBatch(items, { action: 'install', handle: 'me' });
+    expect(outcome.committed.map((entry) => entry.index)).toEqual([0, 2]);
+    expect(outcome.skipped).toEqual([{ index: 1, reason: 'no SKILL.md', noop: false }]);
+    expect(counts.push).toBe(1);
+    const log = (await git(['log', '--format=%s', 'origin/main'], clone)).split('\n').filter(Boolean);
+    expect(log).toContain('me: install first');
+    expect(log).toContain('me: install third');
+    expect(log).not.toContain('me: install broken');
+  });
+
+  it('pushes nothing when no item writes', async () => {
+    const fixture = await bareTeam();
+    const clone = await cloneWithIdentity(fixture.bare, join(fixture.root, 'clone'));
+    const counts = { push: 0, fetch: 0 };
+    const before = await originSha(clone);
+    const outcome = await openTeamRepo(clone, fixture.bare, countingRunner(counts)).safeWriteBatch([{ mutate: () => undefined, message: 'me: install nothing' }], { action: 'install', handle: 'me' });
+    expect(outcome).toMatchObject({ changed: false, committed: [], skipped: [{ index: 0, reason: 'nothing to write', noop: true }] });
+    expect(counts.push).toBe(0);
+    expect(await originSha(clone)).toBe(before);
+  });
+});

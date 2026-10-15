@@ -67,6 +67,8 @@ export interface Backend {
   uninstallSkill(args: UninstallArgs): Run<UninstalledResult[]>;
   uninstallMachine(args: Record<string, never>): Run<MachineUninstallResult>;
   publish(args: PublishArgs): Run<PublishResult>;
+  /** Publish a whole selection in one CLI run: one push for all of them, and one answer per question. */
+  publishMany(args: PublishManyArgs): Run<PublishResult[]>;
   /** Retract a skill from the team marketplace. Destructive and team-wide: confirm before calling. */
   unpublish(args: UnpublishArgs): Run<UnpublishResult>;
   sync(args: SyncArgs): Run<SyncResult>;

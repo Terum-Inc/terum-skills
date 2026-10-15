@@ -18,7 +18,7 @@ import { Runner, systemRunner } from '../lib/runner.js';
 import { Config, Destination, Team, describeRaw, handleSchema, insideRoot, parseOrExplain, parseSkillFrontmatter, sameScope } from '../lib/schema.js';
 import { canonicalDigest, findSkill, readPerson, readTeam, skillRecords, SkillRecord } from '../lib/skills.js';
 import { openTeamRepo, SafeWriteOptions, lockWait } from '../lib/teamRepo.js';
-import { recordProfileEntry, writePersonFile } from '../lib/profile-entry.js';
+import { addProfileEntry, recordProfileEntry, writePersonFile } from '../lib/profile-entry.js';
 import { receiptFiles } from '../lib/evals/receipt-store.js';
 import { receiptSchema, type Receipt } from '../lib/evals/receipt.js';
 import { versionLabel } from '../lib/versions.js';
@@ -79,12 +79,7 @@ export async function run(args: InstallArgs, io: Prompter): Promise<Result<Insta
       const profile = person.profile ?? [];
       if (!profile.length) throw new Error(`${operation.member} has nothing on their profile yet, so there is nothing to install. A teammate adds a skill to their profile when they publish or install it.`);
       const destination = await destinationFor(team);
-      const results: InstalledResult[] = [];
-      for (const item of profile) {
-        const result = await installOne({ team, destination, id: item.id, store, runner, cwd: args.cwd, home: args.home, safeWrite: args.safeWrite }, io);
-        results.push(result);
-      }
-      return success(results);
+      return success(await installMany(profile.map(item => ({ team, destination, id: item.id, store, runner, cwd: args.cwd, home: args.home, safeWrite: args.safeWrite })), io));
     }
     if (operation.kind === 'project') {
       const [team] = selectTeam(config.teams, args.team, args.form);
@@ -92,9 +87,7 @@ export async function run(args: InstallArgs, io: Prompter): Promise<Result<Insta
       const project = Object.hasOwn(teamJson.projects, operation.project) ? teamJson.projects[operation.project] : undefined;
       if (!project) throw new Error(`Unknown project ${operation.project}.`);
       const destination = await destinationFor(team, operation.project);
-      const results: InstalledResult[] = [];
-      for (const id of project.skills) results.push(await installOne({ team, destination, id, project: operation.project, store, runner, cwd: args.cwd, home: args.home, safeWrite: args.safeWrite }, io));
-      return success(results);
+      return success(await installMany(project.skills.map(id => ({ team, destination, id, project: operation.project, store, runner, cwd: args.cwd, home: args.home, safeWrite: args.safeWrite })), io));
     }
     const reference = parseRef(operation.ref);
     if (reference.version !== undefined) throw new Error('Installing a previous version is not supported yet; install installs the latest version.');
@@ -142,10 +135,85 @@ export interface AdoptInstallInput extends InstallOneCommon {
 }
 
 /** One explicit install/consent path; adoption branches before any placement operation. */
-export function installOne(input: AdoptInstallInput, io: Prompter): Promise<AdoptedResult>;
-export function installOne(input: PlacingInstallInput, io: Prompter): Promise<InstalledResult>;
-export async function installOne(input: AdoptInstallInput | PlacingInstallInput, io: Prompter): Promise<AdoptedResult | InstalledResult> {
-  if (input.adopt !== undefined) return adoptOne(input, io);
+/**
+ * A bulk install: one consent question, every skill placed locally, then ONE push for all of them.
+ *
+ * Installing a project used to run `installOne` per skill, and each of those paid for the network
+ * twice — once recording the install, once adding the profile entry. Eleven skills meant
+ * twenty-two fetch/push round trips. Here the two records are one commit per skill (the person
+ * asked for one line of history per skill, not two), and the whole batch is one push.
+ *
+ * Failure isolation is the batch's, not the loop's: a skill whose record cannot be written is
+ * reported and leaves its `pending` entry behind for the retry, while the rest still land.
+ */
+async function installMany(inputs: readonly PlacingInstallInput[], io: Prompter): Promise<InstalledResult[]> {
+  if (!inputs.length) return [];
+  const first = inputs[0]!;
+  const config = await first.store.read();
+  const binding = config.teams[first.team];
+  if (!binding?.handle) throw new Error(`Team ${first.team} has no joined handle.`);
+  const clone = first.store.teamClone(first.team);
+  // Resolve every source before anything is placed: the grants have to be known together for the
+  // question to be asked once, and a version that does not exist must fail before a byte moves.
+  const sources: SkillRecord[] = [];
+  for (const input of inputs) {
+    const skill = await resolveSkill(clone, input.team, input.reference ?? input.id!);
+    const latest = (await listVersions(clone, skill.name))[0]?.folder ?? null;
+    if (!latest) throw new Error(`skills/${skill.name} holds no v<N> folder.`);
+    sources.push(await skillAtSource(join(clone, 'skills', skill.name, latest), skill));
+  }
+  await ensureConsentAll(first.store, sources, io);
+  const placed: PlacedInstall[] = [];
+  for (const [index, input] of inputs.entries()) {
+    io.progress?.({ step: `Placing ${sources[index]!.name}`, current: index + 1, total: inputs.length });
+    placed.push(await placeInstall(input, io, true));
+  }
+  io.progress?.({ step: `Recording ${placed.length} installs`, current: inputs.length, total: inputs.length });
+  const since = new Date().toISOString().slice(0, 10);
+  const localSkills = await librarySize(first.home ?? placementHome(first.store), await first.store.read(), first.store.root);
+  const handle = binding.handle;
+  const outcome = await openTeamRepo(clone, binding.remote, first.runner).safeWriteBatch(placed.map(entry => ({
+    message: `${handle}: install ${entry.skill.name}`,
+    mutate: (tree) => writePersonFile(tree, handle, person => {
+      person.installed = person.installed.filter(existing => !(existing.id === entry.skill.id && sameScope(existing.scope, entry.scope)));
+      person.installed.push({ id: entry.skill.id, version: entry.latest, scope: entry.scope, since });
+      addProfileEntry(person, { id: entry.skill.id, name: entry.skill.name, version: entry.latest, added: since, via: 'install' });
+      if (localSkills !== null) person.local_skills = localSkills;
+    }),
+  })), { action: 'install', handle, ...first.safeWrite, ...lockWait(io) });
+  // A no-op item is a success: the people file already said exactly this, which is what a
+  // re-install of an unchanged version looks like. Only a refused mutation is a failure to record.
+  const landed = new Set([...outcome.committed.map(entry => entry.index), ...outcome.skipped.filter(entry => entry.noop).map(entry => entry.index)]);
+  for (const skipped of outcome.skipped.filter(entry => !entry.noop)) {
+    io.print(`Installed ${placed[skipped.index]!.skill.name}, but could not record it: ${skipped.reason}`);
+  }
+  await first.store.update(fresh => {
+    fresh.pending = fresh.pending.filter(entry => !placed.some((item, index) => landed.has(index) && samePending(entry, item.pending)));
+  });
+  return placed.map((entry, index) => ({ id: entry.skill.id, team: entry.pending.team, path: entry.placed.path, version: entry.latest, profiled: landed.has(index) }));
+}
+
+/** What the local half of an install produced, and everything its team-repo write needs. */
+interface PlacedInstall {
+  skill: SkillRecord;
+  latest: string;
+  scope: { kind: 'global' } | { kind: 'project'; project: string };
+  placed: { path: string; snapshot: { fingerprint: string }; notices: string[] };
+  clone: string;
+  handle: string;
+  remote: string;
+  pending: { op: 'install'; id: string; team: string; scope: { kind: 'global' } | { kind: 'project'; project: string }; destination: Destination; version: string | null; started: string };
+}
+
+/**
+ * Everything an install does on this machine: resolve the skill, take consent, place the folder,
+ * claim it in the ledger and seed its receipts. It touches the network not at all, which is what
+ * lets a bulk install pay for the push once instead of once per skill.
+ *
+ * `consented` is for a caller that already asked — `installMany` collects every skill's grants and
+ * asks one question for the batch, so the per-skill question here must not ask it again.
+ */
+async function placeInstall(input: PlacingInstallInput, io: Prompter, consented = false): Promise<PlacedInstall> {
   const config = await input.store.read();
   const binding = config.teams[input.team];
   if (!binding?.handle) throw new Error(`Team ${input.team} has no joined handle.`);
@@ -165,7 +233,7 @@ export async function installOne(input: AdoptInstallInput | PlacingInstallInput,
   if (!latest) throw new Error(`skills/${skill.name} holds no v<N> folder.`);
   const source = join(clone, 'skills', skill.name, latest);
   const sourceSkill = await skillAtSource(source, skill);
-  await ensureConsent(input.store, sourceSkill, io);
+  if (!consented) await ensureConsent(input.store, sourceSkill, io);
   await input.store.update(fresh => {
     fresh.pending = fresh.pending.filter(entry => !samePending(entry, pending));
     fresh.pending.push(pending);
@@ -221,6 +289,15 @@ export async function installOne(input: AdoptInstallInput | PlacingInstallInput,
     await mkdir(directory, { recursive: true });
     await copyFile(join(receipts, file), join(directory, 'receipt.json'));
   }
+  return { skill, latest, scope, placed: placed!, clone, handle: binding.handle, remote: binding.remote, pending };
+}
+
+export function installOne(input: AdoptInstallInput, io: Prompter): Promise<AdoptedResult>;
+export function installOne(input: PlacingInstallInput, io: Prompter): Promise<InstalledResult>;
+export async function installOne(input: AdoptInstallInput | PlacingInstallInput, io: Prompter): Promise<AdoptedResult | InstalledResult> {
+  if (input.adopt !== undefined) return adoptOne(input, io);
+  const { skill, latest, scope, placed, clone, handle, remote, pending } = await placeInstall(input, io);
+  const binding = { handle, remote };
   io.progress?.({ step: 'Publishing to the team repository', current: 3, total: 4 });
   const repo = openTeamRepo(clone, binding.remote, input.runner);
   const since = new Date().toISOString().slice(0, 10);
@@ -349,6 +426,37 @@ async function recordedPlacementKey(config: Config, path: string): Promise<strin
     if (wanted !== undefined && await canonicalParentPath(key) === wanted) return key;
   }
   return undefined;
+}
+
+/**
+ * One question for a whole batch. Installing a project of eleven skills asked eleven separate
+ * approval questions, each naming one skill, and every one of them had to be answered before the
+ * next skill was even resolved. The grants are known up front, so the person reads the whole set
+ * once and answers once; a skill already approved at this exact grant hash is not in the question,
+ * exactly as it is not in the single-skill one.
+ */
+async function ensureConsentAll(store: ConfigStore, skills: readonly SkillRecord[], io: Prompter): Promise<void> {
+  const malformed = skills.flatMap(skill => skill.grants.ok ? [] : [{ name: skill.name, raw: skill.grants.raw }]);
+  if (malformed.length) {
+    const names = malformed.map(entry => entry.name).join(', ');
+    if (!(await io.confirm(`Install ${malformed.length === 1 ? names : `${malformed.length} skills`} despite malformed allowed-tools?`, {
+      detail: malformed.map(entry => `allowed-tools for ${entry.name} could not be parsed: ${describeRaw(entry.raw)}`),
+    }))) throw new CancelledError(`Consent was declined for malformed allowed-tools on ${names}.`);
+  }
+  const config = await store.read();
+  const asking = skills.flatMap(skill => {
+    const grants = skill.grants;
+    if (!grants.ok || grants.normalized === 'none') return [];
+    if (config.approvals[skill.id]?.grants === grants.hash) return [];
+    return [{ id: skill.id, name: skill.name, normalized: grants.normalized, hash: grants.hash }];
+  });
+  if (!asking.length) return;
+  const detail = asking.flatMap(entry => [`${entry.name} requests allowed-tools:`, ...entry.normalized.split('\n')]);
+  if (!(await io.confirm(`Approve these tools for ${asking.length === 1 ? asking[0]!.name : `${asking.length} skills`}?`, { detail }))) {
+    throw new CancelledError(`Consent was declined for ${asking.map(entry => entry.name).join(', ')}.`);
+  }
+  const approved = new Date().toISOString().slice(0, 10);
+  await store.update(fresh => { for (const entry of asking) fresh.approvals[entry.id] = { grants: entry.hash, approved_at: approved }; });
 }
 
 async function ensureConsent(store: ConfigStore, skill: SkillRecord, io: Prompter): Promise<void> {

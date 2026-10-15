@@ -2593,7 +2593,7 @@ export const invocationLiteralCatalog: readonly { file: string; line: number; po
     "file": "docs/frame-protocol.md",
     "line": 18,
     "policy": "prose",
-    "pattern": "| `progress` | `{\"t\":\"progress\",\"step\":\"...\",\"current\":n,\"total\":n}` | Coarse step reporting for a long verb. `install`, `publish` and eval batches (including setup’s `evals` step) emit it. `step` names the step (`evals`, `install`'s four phases, or `publish`'s five: refresh, category, check, publish, profile, of which the category rung is skipped when the folder already declares one or `--category` was passed); `current` counts what is done so far and `total` appears only when the verb knows it. `features.progress` is `true`. Never required, never ordered against `ask`; a shell that ignores it is unaffected. |"
+    "pattern": "| `progress` | `{\"t\":\"progress\",\"step\":\"...\",\"current\":n,\"total\":n,\"item\":\"...\"}` | Coarse step reporting for a long verb. `install`, `publish` and eval batches (including setup’s `evals` step) emit it. `step` names the step (`evals`, `install`'s four phases, or `publish`'s five: refresh, category, check, publish, profile, of which the category rung is skipped when the folder already declares one or `--category` was passed); `current` counts what is done so far and `total` appears only when the verb knows it. `item` names the skill the rung is about when a verb works through several — `publish <ref...>` with two or more refs emits it — and is absent for a verb doing one thing; a shell driving one process for a whole selection needs it to know which row a rung belongs to, and inferring by order is wrong the moment an item is skipped. `features.progress` is `true`. Never required, never ordered against `ask`; a shell that ignores it is unaffected. |"
   },
   {
     "file": "docs/frame-protocol.md",
@@ -2867,343 +2867,355 @@ export const invocationLiteralCatalog: readonly { file: string; line: number; po
   },
   {
     "file": "docs/frame-protocol.md",
-    "line": 313,
+    "line": 298,
+    "policy": "prose",
+    "pattern": "`publish <ref...>` with **two or more** refs publishes the selection in one run: one refresh, every"
+  },
+  {
+    "file": "docs/frame-protocol.md",
+    "line": 301,
+    "policy": "prose",
+    "pattern": "profile entry rides in that skill's own commit rather than following as a second write, so"
+  },
+  {
+    "file": "docs/frame-protocol.md",
+    "line": 322,
     "policy": "prose",
     "pattern": "`skill move <path> --to global|<project root>`, `skill copy <path> --to global|<project root>`,"
   },
   {
     "file": "docs/frame-protocol.md",
-    "line": 314,
+    "line": 323,
     "policy": "prose",
     "pattern": "`skill rename <path> --to <new-name>`, and"
   },
   {
     "file": "docs/frame-protocol.md",
-    "line": 315,
+    "line": 324,
     "policy": "prose",
     "pattern": "`skill delete <path>` are one-shot frame writes. Only `skill delete` asks: its `text` ask is"
   },
   {
     "file": "docs/frame-protocol.md",
-    "line": 327,
+    "line": 336,
     "policy": "prose",
     "pattern": "`skill disable <path>` / `skill enable <path>` are one-shot frame writes with no ask. They are the"
   },
   {
     "file": "docs/frame-protocol.md",
-    "line": 329,
+    "line": 338,
     "policy": "prose",
     "pattern": "and the app draws no switch): `disable` writes `\"off\"` for the"
   },
   {
     "file": "docs/frame-protocol.md",
-    "line": 331,
+    "line": 340,
     "policy": "prose",
     "pattern": "`enable` removes that `\"off\"` (never a `name-only` or `user-invocable-only` a person set by hand). A folder under"
   },
   {
     "file": "docs/frame-protocol.md",
-    "line": 335,
+    "line": 344,
     "policy": "prose",
     "pattern": "so. Every `ls --local` row, and every `notOffered` entry (a symlinked or half-broken folder Claude Code still"
   },
   {
     "file": "docs/frame-protocol.md",
-    "line": 337,
+    "line": 346,
     "policy": "prose",
     "pattern": "the switch belongs to any folder under a skills root, placed by Terum or not. `skill delete` drops the folder's"
   },
   {
     "file": "docs/frame-protocol.md",
-    "line": 338,
+    "line": 347,
     "policy": "prose",
     "pattern": "`\"off\"` the way `uninstall-skill` does, and `skill rename` / `skill move` carry it to the new name or the new"
   },
   {
     "file": "docs/frame-protocol.md",
-    "line": 341,
+    "line": 350,
     "policy": "prose",
     "pattern": "`skill fix <path>` is a one-shot frame write with no ask. It applies every repair whose outcome is"
   },
   {
     "file": "docs/frame-protocol.md",
-    "line": 343,
+    "line": 352,
     "policy": "prose",
     "pattern": "(the `ls --local` `invalid-yaml` reason), setting `name` to the folder name, setting `license` to the"
   },
   {
     "file": "docs/frame-protocol.md",
-    "line": 344,
+    "line": 353,
     "policy": "prose",
     "pattern": "team policy, removing HYG2's invisible characters, and clearing an executable mode on a non-script."
   },
   {
     "file": "docs/frame-protocol.md",
-    "line": 345,
+    "line": 354,
     "policy": "prose",
     "pattern": "It then runs the same inspection and hygiene gate as `ls --local` and `validate` and prints what still"
   },
   {
     "file": "docs/frame-protocol.md",
-    "line": 349,
+    "line": 358,
     "policy": "prose",
     "pattern": "three, and `validate`'s result carries `repairs`, one sentence per change `skill fix` would make, and"
   },
   {
     "file": "docs/frame-protocol.md",
-    "line": 352,
+    "line": 361,
     "policy": "prose",
     "pattern": "`skill category <path> --to <name>` is a one-shot frame write with no ask. It rewrites"
   },
   {
     "file": "docs/frame-protocol.md",
-    "line": 358,
+    "line": 367,
     "policy": "prose",
     "pattern": "category inside that version's immutable files), and print the `publish` that would mint the next"
   },
   {
     "file": "docs/frame-protocol.md",
-    "line": 363,
+    "line": 372,
     "policy": "prose",
     "pattern": "`prune` lists quarantine paths and asks `Delete <n> quarantined item(s)?`; empty quarantine asks"
   },
   {
     "file": "docs/frame-protocol.md",
-    "line": 366,
+    "line": 375,
     "policy": "prose",
     "pattern": "Neither `skill` nor `project` is in `SERVE_READ_VERBS`: serve gates on the first argv token, so"
   },
   {
     "file": "docs/frame-protocol.md",
-    "line": 367,
+    "line": 376,
     "policy": "prose",
     "pattern": "even `project list` needs its own process. The seven accepted verbs are unchanged."
   },
   {
     "file": "docs/frame-protocol.md",
-    "line": 369,
+    "line": 378,
     "policy": "prose",
     "pattern": "## What `status` reports about this machine"
   },
   {
     "file": "docs/frame-protocol.md",
-    "line": 371,
+    "line": 380,
     "policy": "prose",
     "pattern": "`status`'s result carries two architecture fields, on success and on a failing read alike:"
   },
   {
     "file": "docs/frame-protocol.md",
-    "line": 390,
+    "line": 399,
     "policy": "prose",
     "pattern": "`app` reports the same condition as `emulation`, either `\"win32-arm64-on-x64\"` or `null`, and prints one"
   },
   {
     "file": "docs/frame-protocol.md",
-    "line": 398,
+    "line": 407,
     "policy": "prose",
     "pattern": "`eval-report <skill> [--team <team>]` is read-only: it reads the local clone and this machine's run tree without fetching, networking, or prompting. `result.value` is an `EvalReport`:"
   },
   {
     "file": "docs/frame-protocol.md",
-    "line": 405,
+    "line": 414,
     "policy": "prose",
     "pattern": "`eval`'s own result (`EvalResult`) gained `report: { aggregate, triggers }` — the numbers `renderReport` prints, as data — and `receiptPath` on a completed run; `eval --drain` gained `outcomes: { skill, team?, ok, error? }[]`, one per attempted item in queue order. `validate` gained `directory`, the folder it checked. Additive; protocol stays 1."
   },
   {
     "file": "docs/frame-protocol.md",
-    "line": 407,
+    "line": 416,
     "policy": "prose",
     "pattern": "`sync [--team <team>]` fetches and resets the disposable clone under its writer lock and records"
   },
   {
     "file": "docs/frame-protocol.md",
-    "line": 411,
+    "line": 420,
     "policy": "prose",
     "pattern": "`project add [path]` · `project remove <path>` · `project list` · `project rename <path> --to <name>` are the Library's local project registry. `add` asks `Which folder?` as a `path` ask when no argument is given (default: the nearest git repository above the cwd) and returns `{ path, label, added, parent, reconcile? }`; after a newly added project it scans only that project, and frame mode carries the non-writing reconcile result so the shell can open a dialog only when it is non-empty. `remove` returns `{ path, placementsRemaining, subProjectsRemaining }` and forgets the path only, so nothing on disk changes; `list` returns `{ projects: { path, label, parent, rootState, skillFolders }[] }` in tree order; `rename` returns `{ path, label, previous }` and changes display text only, never the folder. A project registered inside another registered project is its sub-project: `parent` is that project's root (null at the top level), read off the paths on every call so the tree always matches the folder structure, and every `ls --local` project section carries the same `parent`. A sub-project's derived label is its path inside the parent (`apps/web`); a renamed label is kept as typed until renamed again, and the derived labels move out of its way. A project is added only by an explicit act: no verb registers one as a side effect, and `install --into <path>` refuses a path that is not already a project rather than adding it."
   },
   {
     "file": "docs/frame-protocol.md",
-    "line": 415,
+    "line": 424,
     "policy": "prose",
     "pattern": "`app-update --check` (the default) reads the cached release advertisement and local staged/installed versions, and keeps that advertisement fresh by itself: when the last probe is missing or a day old it probes release tags under the same GitHub-team policy and 10 s deadline as `update` (`probe: 'ok' | 'failed'`, at most once a day), otherwise it serves the cache (`probe: 'cached'`, or `'failed'` while the day's attempt failed). `--check --force` probes regardless of the cap. A check never touches the app or the CLI; its only write is the CLI's own release state in `run/latest-version.json` (the advertisement, the attempt, and the running observation every `sync` used to record). Checks always succeed, reporting probe failures as data. Until 0.15.0 the check was read-only and the advertisement was filled by the old sync; after the fetch-only sync collapse (§10) nothing on the app's path probed, so the app could never learn about a newer version by itself. The check owns the probe now."
   },
   {
     "file": "docs/frame-protocol.md",
-    "line": 417,
+    "line": 426,
     "policy": "prose",
     "pattern": "`app-update --stage [--release <version>]` downloads the selected release through `gh`, verifies its published SHA-256, and stages it without installing. The default release is this CLI's version. An advertised tag with missing release assets returns `ok: true, notPublished: true, staged: false`; the shell stays quiet and retries on the next launch."
   },
   {
     "file": "docs/frame-protocol.md",
-    "line": 419,
+    "line": 428,
     "policy": "prose",
     "pattern": "`app-update --apply [--release <version>] [--reason on-close|overnight|manual]` hands a staged install to a detached process. The public result values are:"
   },
   {
     "file": "docs/frame-protocol.md",
-    "line": 439,
+    "line": 448,
     "policy": "prose",
     "pattern": "`app-update --apply` returns as soon as the background installer process exists. The shell must then quit; it is the shell's job to quit and the CLI never kills it. `--apply` watches the CLI's parent process only in frame mode, where that parent is the shell itself; from a terminal it installs immediately."
   },
   {
     "file": "docs/frame-protocol.md",
-    "line": 445,
+    "line": 454,
     "policy": "prose",
     "pattern": "`ls` skill rows add `frontmatter: string | null` beside `body`; `ls --local` rows and `notOffered` entries also include the raw fenced frontmatter when readable (otherwise null), without adding body text to local inventory; key order, quoting, and internal line endings are preserved, and older CLIs may omit the field."
   },
   {
     "file": "docs/frame-protocol.md",
-    "line": 448,
+    "line": 457,
     "policy": "prose",
     "pattern": "`app-update --reason on-close|overnight|manual` records the install reason in every apply marker and forwards it from `--apply` to `--apply-now`. Omission remains compatible with old callers and displays the manual wording. No CLI verb or feature key is added."
   },
   {
     "file": "docs/frame-protocol.md",
-    "line": 450,
+    "line": 459,
     "policy": "prose",
     "pattern": "The desktop checks once at launch; that check refreshes the advertisement at most once a day (App updates above) and displays the advertised version in its top-bar update chip. Settings ▸ Updates uses `updates:app:policy`: `ask` (manual download/install), `on-close` (the default), or `overnight` (01:00–05:00 local after 30 idle minutes). The old boolean migrates once: false → ask, true → on-close. Successful install markers display “Updated to {version}”, adding “when you quit” or “overnight”; `updates:app:lastShown` acknowledges the marker across launches while the current session retains it. Failure markers remain visible. Settings ▸ Updates also carries a one-shot `Update and relaunch` row: it runs `app-update --check --force`, then `--stage` for the advertised build when it is newer and not yet staged, then the same confirmation dialog and `--apply --reason manual` followed by quit. A failed probe is reported as unreachable rather than as up to date, and the launch hook's automatic policy skips a version the row already started downloading in this session."
   },
   {
     "file": "docs/frame-protocol.md",
-    "line": 452,
+    "line": 461,
     "policy": "prose",
     "pattern": "Native-command amendment: `app_update_on_close({ version: string | null })` arms or disarms one detached installer. This additional command is necessary because the installer must outlive the WebView. The base actually has six commands including `quit`, so this is its seventh (the original decision's “five” count predates `quit`). On the last window's CloseRequested or ExitRequested, the shell consumes the arm once and invokes the recorded Node/CLI with `app-update --apply-now --release <version> --reason on-close`, plus `--await-pid <shell-pid>` to preserve the CLI's Windows wait. It uses a new process group on macOS and CREATE_NO_WINDOW | DETACHED_PROCESS on Windows and stays outside the bridge's child cleanup. The command follows the existing application-command registration, without a separate app ACL permission. Before spawning, the shell writes a waiting marker; a spawn failure replaces it with a failed marker. A child that dies before executing the CLI leaves the waiting marker visible as an unfinished install on the next launch. An unwritable marker is logged without preventing close. A manual or overnight handoff first disarms the close action to prevent two installers; a failed handoff restores the previous arm unless the policy changed in the meantime."
   },
   {
     "file": "docs/frame-protocol.md",
-    "line": 460,
+    "line": 469,
     "policy": "prose",
     "pattern": "`eval --queue-list` returns `{ items }`, where each item has `skill`, `path`, `contentHash`, `requestedAt`, optional `team`,"
   },
   {
     "file": "docs/frame-protocol.md",
-    "line": 461,
+    "line": 470,
     "policy": "prose",
     "pattern": "`window: \"overnight\" | \"later\"`, and an optional `lastError`. `eval --dequeue <team>/<skill>` removes all queued"
   },
   {
     "file": "docs/frame-protocol.md",
-    "line": 465,
+    "line": 474,
     "policy": "prose",
     "pattern": "`eval --drain [--parallel n] [--window overnight] [--max n]` returns `{ items, attempted, completed, failures }`."
   },
   {
     "file": "docs/frame-protocol.md",
-    "line": 473,
+    "line": 482,
     "policy": "prose",
     "pattern": "`eval <skill> <skill>… [--parallel n] [--batch n] [--window overnight|later] [--pending]` (past setup, 2026-09-13) runs the wizard's Now / In batches / Overnight choices as flags over any set of Library skills, or over `--pending`, the wizard's own candidate set (every shared skill with no receipt for its current version; needs a team). Several skills run as one batch after a single agent probe, `--parallel` deep (default four, never more than the batch). `--batch n` runs n at a time and asks `Continue with the next …?` before each further batch; a declined continuation queues the remainder for `later`, and a non-interactive caller runs every batch unasked. `--window` queues instead of running and never probes. The result is `{ mode: \"ran\" | \"queued\", team, skills, ok, failed, queued, stoppedAfter? }`; a run with failures is `ok:false` with that partial value, exactly like a drain. Print and `progress` frames name each skill and `progress.total` is the whole set. One skill with none of those flags is the ordinary single eval; the queue modes refuse skills, `--batch` and `--pending`."
   },
   {
     "file": "docs/frame-protocol.md",
-    "line": 476,
+    "line": 485,
     "policy": "prose",
     "pattern": "summary and marks the step `printed`; the shell owns the choices by calling `reconcile --list` and then"
   },
   {
     "file": "docs/frame-protocol.md",
-    "line": 477,
+    "line": 486,
     "policy": "prose",
     "pattern": "`install --adopt` or `publish`. `--no-existing`, quiet and non-interactive setup mark it `skipped`."
   },
   {
     "file": "docs/frame-protocol.md",
-    "line": 481,
+    "line": 490,
     "policy": "prose",
     "pattern": "team clone: sum each arm mean multiplied by `provenance.cases.length * provenance.k`, for both cost and duration. Receipts with null arm measurements do not qualify. With fewer than three eligible receipts,"
   },
   {
     "file": "docs/frame-protocol.md",
-    "line": 484,
+    "line": 493,
     "policy": "prose",
     "pattern": "A declined batch continuation queues the remaining skills for `later`; `eval --drain` includes those items."
   },
   {
     "file": "docs/frame-protocol.md",
-    "line": 488,
+    "line": 497,
     "policy": "prose",
     "pattern": "between 01:00 and 05:00 after thirty minutes without pointer or keyboard activity. The app starts `eval --drain --parallel 4` once that night; Stop cancels that one process. Activity, the preference, and the window are checked before launch; an active batch may finish. This unfiltered drain includes later items too, as required by A1. The app must remain open. Closed-app scheduling is deferred; a person can run"
   },
   {
     "file": "docs/frame-protocol.md",
-    "line": 489,
+    "line": 498,
     "policy": "prose",
     "pattern": "`eval --drain` manually at any time. The overnight preference defaults to true."
   },
   {
     "file": "docs/frame-protocol.md",
-    "line": 511,
+    "line": 520,
     "policy": "prose",
     "pattern": "eval offer available. Batch-size input is limited to three attempts. An empty drain prints `No queued evals.`;"
   },
   {
     "file": "docs/frame-protocol.md",
-    "line": 517,
+    "line": 526,
     "policy": "prose",
     "pattern": "`sync` fetches each configured team clone and hard-resets it to `origin/main`, one team at a time,"
   },
   {
     "file": "docs/frame-protocol.md",
-    "line": 524,
+    "line": 533,
     "policy": "prose",
     "pattern": "The result is `{ changed, teams, notices }`. `notices` carries run-wide lines already phrased for a person, one concern per entry and no diagnostics, because a frame-driven caller may render them verbatim: the desktop app prints them under Settings ▸ Sync after an automatic fetch that did not refresh every team. Each attempted team reports `team`, its own `changed`,"
   },
   {
     "file": "docs/frame-protocol.md",
-    "line": 528,
+    "line": 537,
     "policy": "prose",
     "pattern": "session-start hook left it alone (§8); a plain `sync` always fetches. Top-level `changed` is true when any team moved; a tracked tree that was"
   },
   {
     "file": "docs/frame-protocol.md",
-    "line": 544,
+    "line": 553,
     "policy": "prose",
     "pattern": "terum-skills process is writing the clone; a younger one is named in `detail` and never touched. Every prompt"
   },
   {
     "file": "docs/frame-protocol.md",
-    "line": 555,
+    "line": 564,
     "policy": "prose",
     "pattern": "copy and adds a missing one, and it replaces `~/.terum/skills/hooks/terum-skills-edit.mjs`. Each"
   },
   {
     "file": "docs/frame-protocol.md",
-    "line": 556,
+    "line": 565,
     "policy": "prose",
     "pattern": "rewrite is reported as a notice (`Updated your terum-skills skills for this CLI.`, `Updated your"
   },
   {
     "file": "docs/frame-protocol.md",
-    "line": 557,
+    "line": 566,
     "policy": "prose",
     "pattern": "terum-skills edit hook for this CLI.`). A foreign copy, or an edit hook that is absent because the"
   },
   {
     "file": "docs/frame-protocol.md",
-    "line": 560,
+    "line": 569,
     "policy": "prose",
     "pattern": "An interactive terminal `sync` may also offer to follow a team repository that has gone, and an"
   },
   {
     "file": "docs/frame-protocol.md",
-    "line": 561,
+    "line": 570,
     "policy": "prose",
     "pattern": "accepted offer runs `team move --yes`, which removes and re-places every placed skill. The offer is"
   },
   {
     "file": "docs/frame-protocol.md",
-    "line": 565,
+    "line": 574,
     "policy": "prose",
     "pattern": "Work recorded in `pending` is drained by re-running the matching `install` or `uninstall-skill`, never"
   },
   {
     "file": "docs/frame-protocol.md",
-    "line": 566,
+    "line": 575,
     "policy": "prose",
     "pattern": "by `sync`."
   },
   {
     "file": "docs/frame-protocol.md",
-    "line": 568,
+    "line": 577,
     "policy": "prose",
     "pattern": "The desktop app is an unattended caller: it spawns plain `sync` at the first hello whose `features.refresh` is true and again whenever its window regains focus, at most once a minute, one at a time, and never while a foreground write verb of its own is running. It drives the run read-only and kills it rather than answer, so `sync` must never ask a question; it keeps only `changed`, each team's `state`/`detail`, and `notices`, so anything a person needs to act on has to be in those fields rather than in printed prose. Every completed automatic fetch refreshes the stamp-driven boards (Status, Settings ▸ Sync, Inbox); one that moved a clone also refreshes the Marketplace boards."
   },
